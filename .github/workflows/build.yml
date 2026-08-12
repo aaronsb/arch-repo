@@ -101,9 +101,11 @@ jobs:
 
           repo-add --sign --key "$FPR" "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst
 
+          # repo-add leaves <repo>.db as a symlink to <repo>.db.tar.gz, so these
+          # have to replace the link rather than write through it.
           for ext in db files; do
-            cp "${REPO_NAME}.${ext}.tar.gz"     "${REPO_NAME}.${ext}"
-            cp "${REPO_NAME}.${ext}.tar.gz.sig" "${REPO_NAME}.${ext}.sig"
+            cp --remove-destination "${REPO_NAME}.${ext}.tar.gz"     "${REPO_NAME}.${ext}"
+            cp --remove-destination "${REPO_NAME}.${ext}.tar.gz.sig" "${REPO_NAME}.${ext}.sig"
           done
 
       - name: Publish
