@@ -114,8 +114,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd repo
-          gh release delete repo --yes --cleanup-tag 2>/dev/null || true
-          gh release create repo \
+          # -R keeps gh from inferring the target from git metadata, which the
+          # container's checkout does not always have.
+          gh release delete repo -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create repo -R "$GITHUB_REPOSITORY" \
             --title "pacman repository" \
             --notes "Rolling release. Add to pacman.conf; see the README." \
             ./*
