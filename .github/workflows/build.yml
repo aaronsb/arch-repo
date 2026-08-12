@@ -28,11 +28,16 @@ jobs:
           pacman -Syu --noconfirm --needed namcap git
 
       # makepkg refuses to run as root, and the container's default user is root.
+      # -s below has it install dependencies, which needs passwordless sudo.
       - name: Create build user
         run: |
           useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
 
+      # -s is kept deliberately: nothing here needs a dependency at build time,
+      # but resolving them proves every name in depends() exists in the repos,
+      # which is the failure a hand-assembled list actually has.
       - name: Build
         working-directory: PKGBUILDs/${{ matrix.pkg }}
         run: |
