@@ -72,7 +72,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - run: pacman -Syu --noconfirm --needed github-cli
+      # git is not a gh dependency but gh release shells out to it.
+      - run: pacman -Syu --noconfirm --needed github-cli git
 
       - uses: actions/download-artifact@v5
         with:
