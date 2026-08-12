@@ -1,0 +1,75 @@
+name: check upstream
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ya-claude:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # Everything here is derived from Anthropic's signed index: the new
+      # version and its hash are read out of Packages only after InRelease
+      # verifies against the key committed in the PKGBUILD directory. A bump
+      # therefore can't be forged by whoever answers the HTTP request.
+      - name: Resolve the newest signed release
+        id: upstream
+        working-directory: PKGBUILDs/ya-claude
+        run: |
+          set -euo pipefail
+          APT=https://downloads.claude.ai/claude-desktop/apt/stable
+          curl -fsSLO "$APT/dists/stable/InRelease"
+          curl -fsSLO "$APT/dists/stable/main/binary-amd64/Packages"
+
+          export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
+          gpg --batch --quiet --import anthropic-release-signing.key
+          FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
+          test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+          gpg --batch --verify InRelease
+
+          WANT=$(awk '/^SHA256:/{s=1;next} /^[A-Za-z][A-Za-z0-9-]*:/{s=0}
+                      s && $3=="main/binary-amd64/Packages" && length($1)==64 {print $1; exit}' InRelease)
+          echo "${WANT}  Packages" | sha256sum -c --status -
+
+          # Emit one "version sha256" pair per stanza and take the highest, rather
+          # than trusting the order stanzas happen to appear in. Version resets at
+          # each stanza head so a stanza without a SHA256 can't donate its version
+          # to the next one.
+          NEW=$(awk '
+                  $1=="Package:" { v="" }
+                  $1=="Version:" { v=$2 }
+                  $1=="SHA256:"  { if (v!="") { print v, $2; v="" } }
+                ' Packages | sort -V | tail -1)
+          test -n "$NEW"
+          echo "version=${NEW% *}"  >> "$GITHUB_OUTPUT"
+          echo "sha256=${NEW#* }"   >> "$GITHUB_OUTPUT"
+          echo "current=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)" >> "$GITHUB_OUTPUT"
+          rm -f InRelease Packages
+
+      - name: Bump
+        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        working-directory: PKGBUILDs/ya-claude
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.upstream.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
+
+      - name: Open PR
+        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: bump/ya-claude-${{ steps.upstream.outputs.version }}
+          title: "ya-claude ${{ steps.upstream.outputs.version }}"
+          commit-message: "ya-claude: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
+          body: |
+            Upstream published `${{ steps.upstream.outputs.version }}`.
+
+            Version and hash were read from Anthropic's `Packages` index after
+            `InRelease` verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
+            The build re-runs that same verification, so CI fails if this is wrong.

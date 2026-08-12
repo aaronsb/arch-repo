@@ -1,0 +1,116 @@
+name: build and publish
+
+on:
+  push:
+    branches: [main]
+    paths: ['PKGBUILDs/**', '.github/workflows/build.yml']
+  pull_request:
+    paths: ['PKGBUILDs/**']
+  workflow_dispatch:
+
+env:
+  REPO_NAME: aaronsb
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [ya-claude]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: |
+          pacman -Syu --noconfirm --needed namcap git
+
+      # makepkg refuses to run as root, and the container's default user is root.
+      - name: Create build user
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build
+        working-directory: PKGBUILDs/${{ matrix.pkg }}
+        run: |
+          sudo -u builder makepkg -sf --noconfirm
+
+      # The two OVMF symlinks resolve into edk2-ovmf, which is an optdepend, so
+      # namcap sees them dangle inside the package. Every other error fails.
+      - name: Lint
+        working-directory: PKGBUILDs/${{ matrix.pkg }}
+        run: |
+          namcap ./*.pkg.tar.zst | tee namcap.txt
+          if grep '^.* E: ' namcap.txt \
+             | grep -vE "Symlink \(usr/share/edk2/OVMF_(CODE|VARS)_4M\.fd\) points to non-existing"; then
+            echo "::error::namcap reported an unexpected error"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.pkg }}
+          path: PKGBUILDs/${{ matrix.pkg }}/*.pkg.tar.zst
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: pacman -Syu --noconfirm --needed github-cli
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Import repo signing key
+        env:
+          KEY: ${{ secrets.REPO_SIGNING_KEY }}
+        run: |
+          echo "$KEY" | gpg --batch --import
+          gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}' > /tmp/fpr
+
+      # pacman fetches <repo>.db and <repo>.files by those exact names, but
+      # repo-add writes .db.tar.gz with a symlink alongside. GitHub release
+      # assets can't be symlinks, so both names are uploaded as real files.
+      - name: Assemble and sign the repository
+        env:
+          PASSPHRASE: ${{ secrets.REPO_SIGNING_PASSPHRASE }}
+        run: |
+          mkdir -p repo && cp artifacts/*.pkg.tar.zst repo/
+          cd repo
+          FPR=$(cat /tmp/fpr)
+
+          for p in *.pkg.tar.zst; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+                --detach-sign --no-armor -u "$FPR" "$p"
+          done
+
+          repo-add --sign --key "$FPR" "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst
+
+          for ext in db files; do
+            cp "${REPO_NAME}.${ext}.tar.gz"     "${REPO_NAME}.${ext}"
+            cp "${REPO_NAME}.${ext}.tar.gz.sig" "${REPO_NAME}.${ext}.sig"
+          done
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd repo
+          gh release delete repo --yes --cleanup-tag 2>/dev/null || true
+          gh release create repo \
+            --title "pacman repository" \
+            --notes "Rolling release. Add to pacman.conf; see the README." \
+            ./*

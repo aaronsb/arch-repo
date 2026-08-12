@@ -1,0 +1,18 @@
+# makepkg working files and build output
+src/
+pkg/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+*.log
+
+# fetched sources — re-downloaded and re-verified on every build
+*.deb
+InRelease
+Packages
+
+# assembled repository
+repo/
+*.db
+*.db.tar.gz
+*.files
+*.files.tar.gz
