@@ -26,13 +26,21 @@ Server = https://github.com/aaronsb/arch-repo/releases/latest/download
 SigLevel = Required TrustedOnly
 ```
 
-Import and locally sign the repository key:
+Import and locally sign the repository key. It ships in this repository rather
+than on a keyserver — keyserver uploads can't be undone, and a fleet this size
+doesn't need one:
 
 ```bash
-sudo pacman-key --recv-keys <REPO_KEY_FINGERPRINT>
-sudo pacman-key --lsign-key <REPO_KEY_FINGERPRINT>
+curl -fsSL https://raw.githubusercontent.com/aaronsb/arch-repo/main/PKGBUILDs/arch-repo-signing.key \
+  | sudo pacman-key --add -
+sudo pacman-key --lsign-key B42E8C9BD81122E179A75A7D9B4ABFB016510B40
 sudo pacman -Sy
 ```
+
+One key signs the whole repository, which is the usual convention — the trust
+anchor is the archive, not any one package. It is a dedicated unattended key,
+deliberately unrelated to the personal key that signs commits, so revoking it
+touches nothing else.
 
 ## Packages
 

@@ -90,16 +90,13 @@ jobs:
       # repo-add writes .db.tar.gz with a symlink alongside. GitHub release
       # assets can't be symlinks, so both names are uploaded as real files.
       - name: Assemble and sign the repository
-        env:
-          PASSPHRASE: ${{ secrets.REPO_SIGNING_PASSPHRASE }}
         run: |
           mkdir -p repo && cp artifacts/*.pkg.tar.zst repo/
           cd repo
           FPR=$(cat /tmp/fpr)
 
           for p in *.pkg.tar.zst; do
-            gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
-                --detach-sign --no-armor -u "$FPR" "$p"
+            gpg --batch --yes --detach-sign --no-armor -u "$FPR" "$p"
           done
 
           repo-add --sign --key "$FPR" "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst
