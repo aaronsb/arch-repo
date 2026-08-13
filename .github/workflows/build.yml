@@ -121,3 +121,58 @@ jobs:
             --title "pacman repository" \
             --notes "Rolling release. Add to pacman.conf; see the README." \
             ./*
+
+  # The AUR carries the same recipe for people outside this fleet. It is pushed
+  # only after the package has actually built and published here, so a broken
+  # PKGBUILD cannot reach it.
+  aur:
+    needs: publish
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: pacman -Syu --noconfirm --needed git openssh
+
+      - name: Configure AUR access
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            IdentitiesOnly yes
+          EOF
+
+      - name: Push if the version moved
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory '*'
+
+          git clone -q ssh://aur@aur.archlinux.org/ya-claude.git /tmp/aur
+          cp PKGBUILDs/ya-claude/PKGBUILD PKGBUILDs/ya-claude/anthropic-release-signing.key /tmp/aur/
+          chown -R builder:builder /tmp/aur
+
+          # makepkg will not run as root, and --printsrcinfo is still makepkg.
+          cd /tmp/aur
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+          if git diff --quiet; then
+            echo "AUR already matches; nothing to push"
+            exit 0
+          fi
+
+          VER=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)
+          git config user.name  'Aaron Bockelie'
+          git config user.email 'aaronsb@gmail.com'
+          git add PKGBUILD .SRCINFO anthropic-release-signing.key
+          git commit -qm "ya-claude ${VER}"
+          git push origin HEAD:refs/heads/master

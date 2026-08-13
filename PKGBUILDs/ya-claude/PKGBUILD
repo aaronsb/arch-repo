@@ -3,7 +3,7 @@
 pkgname=ya-claude
 pkgver=1.28929.0
 pkgrel=1
-pkgdesc="Claude Desktop, repackaged from Anthropic's official Debian build"
+pkgdesc="Claude Desktop from Anthropic's official Debian build, verified at build time against their signed apt index"
 arch=('x86_64')
 url="https://claude.com/download"
 license=('LicenseRef-Proprietary')
