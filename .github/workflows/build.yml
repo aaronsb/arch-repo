@@ -136,23 +136,20 @@ jobs:
 
       - run: pacman -Syu --noconfirm --needed git openssh
 
-      - name: Configure AUR access
+      # Kept as one step with absolute paths: HOME is not stable across container
+      # steps here, so credentials written in one step are not necessarily
+      # visible in the next.
+      - name: Push if the version moved
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
         run: |
-          install -dm700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          cat > ~/.ssh/config <<'EOF'
-          Host aur.archlinux.org
-            User aur
-            IdentityFile ~/.ssh/aur
-            IdentitiesOnly yes
-          EOF
+          install -dm700 /tmp/aur-ssh
+          printf '%s\n' "$AUR_SSH_KEY" > /tmp/aur-ssh/key
+          chmod 600 /tmp/aur-ssh/key
+          ssh-keyscan aur.archlinux.org > /tmp/aur-ssh/known_hosts 2>/dev/null
+          test -s /tmp/aur-ssh/known_hosts   # empty means the scan silently failed
+          export GIT_SSH_COMMAND="ssh -i /tmp/aur-ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/tmp/aur-ssh/known_hosts"
 
-      - name: Push if the version moved
-        run: |
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
           git config --global --add safe.directory '*'
