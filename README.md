@@ -86,6 +86,18 @@ Computer Use is not included. Upstream doesn't ship it on Linux yet, and the
 third-party patch that adds it means running a modified `app.asar` — a different
 trust decision, deliberately kept out of this package.
 
+### On the name
+
+`ya-claude` is *yet another claude*, in the tradition of `yay` and every
+`yet-another-*` before it. At the time it was written the AUR carried 74 packages
+matching `claude`. Fifty-two had zero votes. Two pointed at GitHub repositories that
+no longer existed.
+
+Adding a seventy-fifth needs a reason. This one's is in the four checks above — it is
+the only one that asks whether the hash it pins was ever Anthropic's.
+
+> *"YOU CLOD!"* — Peridot, on unverified package signatures
+
 ## CI
 
 `update.yml` polls the signed index daily and opens a PR when upstream moves;
