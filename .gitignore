@@ -1,14 +1,11 @@
-# makepkg working files and build output
-src/
-pkg/
-*.pkg.tar.zst
-*.pkg.tar.zst.sig
-*.log
-
-# fetched sources — re-downloaded and re-verified on every build
-*.deb
-InRelease
-Packages
+# Only the recipe and its trust anchor are tracked. Everything else in a package
+# directory is a downloaded source or a build artifact, and downloads here are
+# hundreds of megabytes.
+PKGBUILDs/*/*
+!PKGBUILDs/*/PKGBUILD
+!PKGBUILDs/*/*.key
+!PKGBUILDs/*/.SRCINFO
+!PKGBUILDs/*/.namcap-allow
 
 # assembled repository
 repo/

@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pkg: [ya-claude]
+        pkg: [ya-claude, ya-claude-code]
     steps:
       - uses: actions/checkout@v5
 
@@ -43,15 +43,20 @@ jobs:
         run: |
           sudo -u builder makepkg -sf --noconfirm
 
-      # The two OVMF symlinks resolve into edk2-ovmf, which is an optdepend, so
-      # namcap sees them dangle inside the package. Every other error fails.
+      # Errors a package knowingly accepts are listed as regexes in its own
+      # .namcap-allow, with the reason in the PKGBUILD. Anything else fails.
       - name: Lint
         working-directory: PKGBUILDs/${{ matrix.pkg }}
         run: |
           namcap ./*.pkg.tar.zst | tee namcap.txt
-          if grep '^.* E: ' namcap.txt \
-             | grep -vE "Symlink \(usr/share/edk2/OVMF_(CODE|VARS)_4M\.fd\) points to non-existing"; then
+          if [ -f .namcap-allow ]; then
+            unexpected=$(grep ' E: ' namcap.txt | grep -vE -f .namcap-allow || true)
+          else
+            unexpected=$(grep ' E: ' namcap.txt || true)
+          fi
+          if [ -n "$unexpected" ]; then
             echo "::error::namcap reported an unexpected error"
+            printf '%s\n' "$unexpected"
             exit 1
           fi
 

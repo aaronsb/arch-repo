@@ -73,3 +73,72 @@ jobs:
             Version and hash were read from Anthropic's `Packages` index after
             `InRelease` verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
             The build re-runs that same verification, so CI fails if this is wrong.
+
+  ya-claude-code:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # Claude Code publishes a per-release manifest with a detached signature
+      # rather than an apt index, so the shape differs from ya-claude even though
+      # the signing identity is the same.
+      - name: Resolve the newest signed release
+        id: upstream
+        working-directory: PKGBUILDs/ya-claude-code
+        run: |
+          set -euo pipefail
+          REL=https://downloads.claude.ai/claude-code-releases
+
+          # This pointer is unsigned. It only selects which release to take, and
+          # every candidate it can name is a genuine signed Anthropic build; the
+          # manifest check below is what establishes authenticity.
+          NEW=$(curl -fsSL "$REL/latest" | tr -d '[:space:]')
+          echo "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+          curl -fsSLo manifest.json     "$REL/$NEW/manifest.json"
+          curl -fsSLo manifest.json.sig "$REL/$NEW/manifest.json.sig"
+
+          export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
+          gpg --batch --quiet --import anthropic-release-signing.key
+          FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
+          test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+          gpg --batch --verify manifest.json.sig manifest.json
+
+          MVER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' manifest.json | head -1)
+          test "$MVER" = "$NEW"
+
+          SUM=$(sed -n '/"linux-x64"[[:space:]]*:/,/}/p' manifest.json \
+                | sed -n 's/.*"checksum"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' | head -1)
+          test -n "$SUM"
+
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SUM"  >> "$GITHUB_OUTPUT"
+          echo "current=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)" >> "$GITHUB_OUTPUT"
+          rm -f manifest.json manifest.json.sig
+
+      - name: Bump
+        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        working-directory: PKGBUILDs/ya-claude-code
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.upstream.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
+
+      - name: Open PR
+        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: bump/ya-claude-code-${{ steps.upstream.outputs.version }}
+          title: "ya-claude-code ${{ steps.upstream.outputs.version }}"
+          commit-message: "ya-claude-code: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
+          body: |
+            Upstream published `${{ steps.upstream.outputs.version }}`.
+
+            The checksum was read from that release's manifest after its detached
+            signature verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`,
+            and the manifest's own version field was checked to match — a validly
+            signed manifest for a different release is rejected. The build re-runs
+            all of it.
