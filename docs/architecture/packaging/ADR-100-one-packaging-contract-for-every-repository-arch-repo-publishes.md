@@ -15,7 +15,7 @@ related:
 
 Thirteen packages carry this maintainer's name on the AUR. Nine reach it, or
 will, through `arch-repo`. The other four do not, and the reasons they do not
-are all different — which is the finding that motivates this.
+are all different.
 
 Six of the source repositories grew their own AUR publisher, independently, at
 different times:
@@ -32,15 +32,12 @@ different times:
 They converged on the same shape without ever being designed together: verify a
 version, run `updpkgsums`, regenerate `.SRCINFO`, clone the AUR repository,
 commit, push. Six implementations of one procedure, each with its own bugs, each
-needing to be remembered when the next project is packaged. That convergence is
-the argument for moving the procedure once into `arch-repo` — a shared
-implementation is the ordinary answer to six copies of one thing.
+needing to be remembered when the next project is packaged.
 
-What it does not by itself give is the thing actually being asked for: a spec to
-write to. Moving the pipeline removes the duplicated code; it does not remove
-having to work out, per project, what `arch-repo` will need. Three of the four
-uncovered packages are uncovered for exactly that reason, and each found a
-different way to be unpackageable:
+Moving the procedure into `arch-repo` removes the duplicated code. It does not
+remove working out, per project, what `arch-repo` will need. Three of the four
+uncovered packages are uncovered for that reason, and each found a different way
+to be unpackageable:
 
 | Package | Why it is outside |
 |---|---|
@@ -61,10 +58,10 @@ independently and correctly, and answered by keeping the sum out of version
 control instead of by taking the recipe from the branch and the hash from the
 tag. Two good answers to one question is what an unwritten contract produces.
 
-One defect in `arch-repo` belongs in this context because a spec has to state
-what it means by a version. `github_latest` asks for `releases/latest`, which
-GitHub already filters to non-prerelease, non-draft. When a repository has cut
-no releases it falls back to the tag list, which is not filtered at all — and
+A spec has to say what it means by a version, and `arch-repo` currently gets
+that wrong in one place. `github_latest` asks for `releases/latest`, which
+GitHub filters to non-prerelease, non-draft. When a repository has cut no
+releases it falls back to the tag list, which is not filtered at all — and
 `sort -V` prefers the pre-release:
 
 ```
@@ -104,13 +101,11 @@ projects that artifact is GitHub's generated source tarball
 package ships something built instead, `make release` produces it and the release
 carries it as an asset.
 
-Requiring a release rather than a tag is what makes "not a pre-release"
-enforceable. GitHub already excludes drafts and pre-releases from
-`releases/latest`; a tag list has no such notion, and sorting one is what picks
-`v1.2.0-rc1` over `v1.2.0`. `obsbot-camera-control` and `yay-friend` tag without
-releasing today, which is a repository fix, not a watcher fix. The tag fallback
-stays, filtered to release-shaped tags, because it is the only thing that works
-for upstreams this contract has no authority over.
+A release is required rather than a tag because GitHub already excludes drafts
+and pre-releases from `releases/latest`, and a tag list has no such notion.
+`obsbot-camera-control` and `yay-friend` tag without releasing today; that is a
+repository fix. The tag fallback stays, filtered to release-shaped tags, for
+upstreams this contract has no authority over.
 
 **`my-app-git`** — VCS. `source=("$_pkgname::git+$url.git")` with
 `sha256sums=('SKIP')`. There is no version to watch, and `pkgver()` derives one
@@ -143,9 +138,8 @@ go module. `clicue` already performs that check and it survives unchanged; what
 changes is which two values it compares, because under this contract the
 committed `pkgver` is not one of them.
 
-`make package` is the pre-tag dry run of what `arch-repo` will do. It is the
-target that earns the spec: a recipe that is going to fail in a bump pull
-request fails on the desk instead.
+`make package` is the pre-tag dry run of what `arch-repo` will do: a recipe that
+would fail in a bump pull request fails on the desk instead.
 
 There is no `make aur`, no `make publish-aur`, no `publish-aur.sh`.
 
@@ -162,9 +156,8 @@ what they have all been doing — reaches nobody:
 | `sha256sums` | computed from the tag's artifact |
 | `.SRCINFO` | regenerated at publish from the rendered recipe |
 
-A pre-release tag is not a version. Where the version is read from the tag list
-rather than from a release, the list is filtered to release tags before it is
-sorted.
+Where the version is read from the tag list rather than from a release, the list
+is filtered to release tags before it is sorted.
 
 ### Republishing without a change
 
@@ -179,32 +172,30 @@ can disagree with the first.
 
 ### What bringing a repository into conformance costs
 
-Almost nothing that a user sees, because almost all of it happens on the default
-branch and the recipe comes from the default branch. Moving a PKGBUILD to the
-root, adding the three make targets, correcting a `pkgver()`, dropping a
-publisher — none of that changes a byte of the software, and none of it needs a
-new tag. Each lands as `pkgrel` advancing: `1.2.0-1` to `1.2.0-2`, and again if
-a second pass is needed. That is the field's purpose, and it is why detection
-moved to recipe content in [[ADR-200]].
+Almost nothing a user sees, because the recipe comes from the default branch and
+that is where all of it happens. Moving a PKGBUILD to the root, adding the three
+make targets, correcting a `pkgver()`, dropping a publisher — none of it changes
+a byte of the software or needs a new tag. Each lands as `pkgrel` advancing:
+`1.2.0-1` to `1.2.0-2`, and again if a second pass is needed, which is what
+detection on recipe content in [[ADR-200]] is for.
 
 A new tag is needed only when the contents of the tarball must change — a
 package adopting the built-artifact shape, whose release has to start carrying
 an asset, or a build that comes to need a file the last tag does not contain.
 None of the thirteen packages is in that position today.
 
-Cutting a patch release for a packaging fix is the alternative, and it is the
-wrong shape twice over: it asks a project to release software that did not
-change, and it spends a version number on something a reader of the changelog
-cannot act on. `pkgrel` resets to 1 at the next genuine release, so a package
-that reaches `1.2.0-4` during normalisation carries no trace of it afterwards.
+The alternative is cutting a patch release per packaging fix, which asks a
+project to release software that did not change and spends a version number on
+something a reader of the changelog cannot act on. `pkgrel` resets to 1 at the
+next genuine release, so a package that reaches `1.2.0-4` during normalisation
+carries no trace of it afterwards.
 
 ## Consequences
 
 ### Positive
 
 - Packaging a new project is following a written contract rather than
-  reconstructing one from the last project that got it right. That is the whole
-  ask; everything else here is in service of it.
+  reconstructing one from the last project that got it right.
 - Six publishers are deleted rather than maintained. Their bugs go with them.
 - `clicue`'s circularity argument is answered rather than worked around, and its
   `sha256sums=SKIP` becomes a real hash without the tagging order changing.
@@ -214,16 +205,14 @@ that reaches `1.2.0-4` during normalisation carries no trace of it afterwards.
 
 ### Negative
 
-- Two repositories have to move before they conform, and one of them
-  (`clicue`) has to give up a working release system to do it. A working thing
-  being replaced by a shared thing is a real cost even when the shared thing is
-  better.
+- Two repositories have to move before they conform, and `clicue` has to give
+  up a working release system to do it.
 - The contract is enforced by review, like the watcher contract above it. A
-  repository that quietly puts its PKGBUILD somewhere else is not detected; it
-  simply never gets onboarded.
-- `make package` asks every repository to carry a clean-chroot build target that
-  most of them did not have. That is new per-repository surface, justified only
-  because it is the same three lines everywhere.
+  repository that puts its PKGBUILD somewhere else is never onboarded rather
+  than reported.
+- `make package` asks every repository to carry a clean-chroot build target most
+  of them did not have — new per-repository surface, and the same three lines in
+  each.
 
 ### Neutral
 
@@ -234,10 +223,10 @@ that reaches `1.2.0-4` during normalisation carries no trace of it afterwards.
 - `-git` packages stop being the hard case. With detection on recipe content
   rather than version ([[ADR-200]]), a VCS package needs no version discovery at
   all — a changed recipe is the only reason to publish one.
-- Trust stays per-package and does not become uniform. `ya-claude` verifies a GPG
-  chain before it will report a version; `mlterm-fb` has no upstream signatures
-  and carries `.no-auto-merge`. That difference is about what upstream publishes,
-  not about who wrote the software, so no amount of unification removes it.
+- Trust stays per-package. `ya-claude` verifies a GPG chain before it will report
+  a version; `mlterm-fb` has no upstream signatures and carries `.no-auto-merge`.
+  That difference is about what upstream publishes, not about who wrote the
+  software, so no amount of unification removes it.
 
 ## Alternatives Considered
 
