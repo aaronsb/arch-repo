@@ -4,8 +4,12 @@ on:
   push:
     branches: [main]
     paths: ['PKGBUILDs/**', '.github/workflows/build.yml']
+  # Deliberately unfiltered, unlike the push trigger above. These two build jobs
+  # are main's required status checks, and a path filter skips the whole
+  # workflow rather than reporting a passing context — so a PR that touches no
+  # PKGBUILD would produce no checks and could never satisfy the branch rule.
+  # A minute of redundant build on doc-only PRs buys a gate that always reports.
   pull_request:
-    paths: ['PKGBUILDs/**']
   workflow_dispatch:
 
 env:
@@ -154,6 +158,14 @@ jobs:
           ssh-keyscan aur.archlinux.org > /tmp/aur-ssh/known_hosts 2>/dev/null
           test -s /tmp/aur-ssh/known_hosts   # empty means the scan silently failed
           export GIT_SSH_COMMAND="ssh -i /tmp/aur-ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/tmp/aur-ssh/known_hosts"
+
+          # The AUR answers an unregistered key with a bare "Permission denied
+          # (publickey)" that names neither the key it saw nor the account it
+          # looked under, which is indistinguishable from a malformed secret.
+          # The public half of a private key is not itself a secret, so printing
+          # its fingerprint costs nothing and turns that into a value to compare
+          # against the keys listed on aur.archlinux.org/account.
+          echo "offering $(ssh-keygen -lf /tmp/aur-ssh/key)"
 
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"

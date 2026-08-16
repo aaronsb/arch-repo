@@ -6,7 +6,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Both jobs open their PR with BUMP_PAT rather than the default GITHUB_TOKEN.
+  # GitHub suppresses the events a GITHUB_TOKEN raises, so a PR opened with it
+  # never triggers build.yml: it carries no checks, and --auto has nothing to
+  # wait for and would merge an unverified bump immediately. A user token makes
+  # the PR an ordinary one and the required checks fire.
+  #
+  # Failing outright on a missing secret, rather than falling back to
+  # GITHUB_TOKEN, is the point. The degraded path still looks like it works —
+  # PRs appear, they merge — while the verification quietly stopped happening.
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the bump token
+        env:
+          BUMP_PAT: ${{ secrets.BUMP_PAT }}
+        run: |
+          test -n "$BUMP_PAT" || {
+            echo "::error::BUMP_PAT is unset; a bump PR opened without it would carry no checks."
+            exit 1
+          }
+
   ya-claude:
+    needs: preflight
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -61,10 +83,13 @@ jobs:
           sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
 
       - name: Open PR
+        id: pr
         if: steps.upstream.outputs.version != steps.upstream.outputs.current
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ secrets.BUMP_PAT }}
           branch: bump/ya-claude-${{ steps.upstream.outputs.version }}
+          delete-branch: true
           title: "ya-claude ${{ steps.upstream.outputs.version }}"
           commit-message: "ya-claude: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
           body: |
@@ -74,7 +99,14 @@ jobs:
             `InRelease` verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
             The build re-runs that same verification, so CI fails if this is wrong.
 
+      - name: Queue the merge
+        if: steps.pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_PAT }}
+        run: gh pr merge --auto --merge "${{ steps.pr.outputs.pull-request-number }}"
+
   ya-claude-code:
+    needs: preflight
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -128,10 +160,13 @@ jobs:
           sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
 
       - name: Open PR
+        id: pr
         if: steps.upstream.outputs.version != steps.upstream.outputs.current
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ secrets.BUMP_PAT }}
           branch: bump/ya-claude-code-${{ steps.upstream.outputs.version }}
+          delete-branch: true
           title: "ya-claude-code ${{ steps.upstream.outputs.version }}"
           commit-message: "ya-claude-code: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
           body: |
@@ -142,3 +177,9 @@ jobs:
             and the manifest's own version field was checked to match — a validly
             signed manifest for a different release is rejected. The build re-runs
             all of it.
+
+      - name: Queue the merge
+        if: steps.pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_PAT }}
+        run: gh pr merge --auto --merge "${{ steps.pr.outputs.pull-request-number }}"
