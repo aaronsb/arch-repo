@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Ours: the recipe comes from the repository's default branch, the version and
+# hash from its newest tag. See sync_github_package for why those differ.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+sync_github_package aaronsb/obsbot-camera-control
