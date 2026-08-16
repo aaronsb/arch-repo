@@ -6,6 +6,13 @@ PKGBUILDs/*/*
 !PKGBUILDs/*/*.key
 !PKGBUILDs/*/.SRCINFO
 !PKGBUILDs/*/.namcap-allow
+!PKGBUILDs/*/upstream
+!PKGBUILDs/*/notes
+!PKGBUILDs/*/.no-auto-merge
+
+# Shared helpers, not a package. The rule above is written for package
+# directories and would otherwise swallow this one whole.
+!PKGBUILDs/lib/*
 
 # Credentials staged for `gh secret set`. They live in GitHub as secrets; a copy
 # in the working tree is a convenience for setting them, not something a

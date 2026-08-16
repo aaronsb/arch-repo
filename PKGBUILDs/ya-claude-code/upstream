@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Claude Code publishes a per-release manifest with a detached signature rather
+# than an apt index, so the shape differs from ya-claude even though the signing
+# identity is the same.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+REL=https://downloads.claude.ai/claude-code-releases
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+
+# This pointer is unsigned. It only selects which release to take, and every
+# candidate it can name is a genuine signed Anthropic build; the manifest check
+# below is what establishes authenticity.
+version=$(curl -fsSL "$REL/latest" | tr -d '[:space:]')
+echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+current=$(current_pkgver)
+is_newer "$version" "$current" || exit 0
+
+curl -fsSL -o "$work/manifest.json"     "$REL/$version/manifest.json"
+curl -fsSL -o "$work/manifest.json.sig" "$REL/$version/manifest.json.sig"
+
+export GNUPGHOME="$work/gnupg"; install -dm700 "$GNUPGHOME"
+gpg --batch --quiet --import anthropic-release-signing.key
+FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
+test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+gpg --batch --verify "$work/manifest.json.sig" "$work/manifest.json" >/dev/null 2>&1
+
+# The signed manifest carries the version alongside the checksums, so a validly
+# signed manifest for some other release cannot be substituted for this one.
+MVER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$work/manifest.json" | head -1)
+test "$MVER" = "$version"
+
+sha256=$(sed -n '/"linux-x64"[[:space:]]*:/,/}/p' "$work/manifest.json" \
+         | sed -n 's/.*"checksum"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' | head -1)
+test -n "$sha256"
+
+set_pkgver "$version"
+set_first_sum sha256 "$sha256"
+emit_bump "$current" "$version"

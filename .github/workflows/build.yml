@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
     paths: ['PKGBUILDs/**', '.github/workflows/build.yml']
-  # Deliberately unfiltered, unlike the push trigger above. These two build jobs
-  # are main's required status checks, and a path filter skips the whole
-  # workflow rather than reporting a passing context — so a PR that touches no
-  # PKGBUILD would produce no checks and could never satisfy the branch rule.
-  # A minute of redundant build on doc-only PRs buys a gate that always reports.
+  # Deliberately unfiltered, unlike the push trigger above. The gate below is
+  # main's required status check, and a path filter skips the whole workflow
+  # rather than reporting a passing context — so a PR that touches no PKGBUILD
+  # would produce no checks and could never satisfy the branch rule. A minute of
+  # redundant build on doc-only PRs buys a gate that always reports.
   pull_request:
   workflow_dispatch:
 
@@ -16,14 +16,33 @@ env:
   REPO_NAME: aaronsb
 
 jobs:
+  # The package list is read from the tree rather than written here, so adding a
+  # package is adding a directory. Keeping it in the workflow meant every new
+  # package touched a file whose job names are branch-protection contexts.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      pkgs: ${{ steps.list.outputs.pkgs }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: list
+        run: |
+          pkgs=$(find PKGBUILDs -mindepth 2 -maxdepth 2 -name PKGBUILD -type f \
+                 | xargs -r -n1 dirname | xargs -r -n1 basename | sort \
+                 | jq -R . | jq -sc .)
+          test "$pkgs" != "[]"
+          echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "building: $pkgs"
+
   build:
+    needs: discover
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
     strategy:
       fail-fast: false
       matrix:
-        pkg: [ya-claude, ya-claude-code]
+        pkg: ${{ fromJSON(needs.discover.outputs.pkgs) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -70,8 +89,27 @@ jobs:
           path: PKGBUILDs/${{ matrix.pkg }}/*.pkg.tar.zst
           retention-days: 7
 
+  # One check name that does not change when packages come and go. Branch
+  # protection names its required contexts as strings, so requiring the matrix
+  # legs directly meant every added package silently arrived ungated: its job
+  # was not in the required list, and a rule listing a departed package's job
+  # can never be satisfied at all.
+  gate:
+    needs: [discover, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every package to have built
+        run: |
+          echo "discover=${{ needs.discover.result }} build=${{ needs.build.result }}"
+          # A matrix result is the aggregate of its legs, so one failed package
+          # fails this. Cancelled and skipped are failures here too — neither
+          # means the packages built.
+          test "${{ needs.discover.result }}" = success
+          test "${{ needs.build.result }}"    = success
+
   publish:
-    needs: build
+    needs: gate
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     # Two bumps merging minutes apart is the normal case now that they merge
     # themselves, and this job deletes the release before recreating it. Run

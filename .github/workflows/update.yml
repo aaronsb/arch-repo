@@ -5,12 +5,24 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
+# Nothing in this file names a package. Adding one means adding a directory
+# under PKGBUILDs with an `upstream` script in it; this workflow discovers it.
+#
+# The per-package contract:
+#
+#   upstream        required to be watched. Runs with cwd set to the package
+#                   directory. Prints nothing when already current; prints
+#                   current= and version= and rewrites the PKGBUILD when not.
+#   notes           optional. Run as `notes <current> <new>`; stdout is appended
+#                   to the pull request body.
+#   .no-auto-merge  optional. Its presence means the PR waits for a human even
+#                   when the build is green.
 jobs:
-  # Both jobs open their PR with BUMP_PAT rather than the default GITHUB_TOKEN.
-  # GitHub suppresses the events a GITHUB_TOKEN raises, so a PR opened with it
-  # never triggers build.yml: it carries no checks, and --auto has nothing to
-  # wait for and would merge an unverified bump immediately. A user token makes
-  # the PR an ordinary one and the required checks fire.
+  # create-pull-request opens the PR as whoever owns the token it is given.
+  # Under the default GITHUB_TOKEN, GitHub suppresses the resulting
+  # pull_request event to stop workflows recursing, so build.yml never runs,
+  # the PR carries no checks, and --auto has nothing to wait for. A user token
+  # makes the PR ordinary.
   #
   # Failing outright on a missing secret, rather than falling back to
   # GITHUB_TOKEN, is the point. The degraded path still looks like it works —
@@ -27,201 +39,91 @@ jobs:
             exit 1
           }
 
-  ya-claude:
+  discover:
     needs: preflight
     runs-on: ubuntu-latest
+    outputs:
+      pkgs: ${{ steps.list.outputs.pkgs }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: list
+        run: |
+          pkgs=$(find PKGBUILDs -mindepth 2 -maxdepth 2 -name upstream -type f \
+                 | xargs -r -n1 dirname | xargs -r -n1 basename | sort \
+                 | jq -R . | jq -sc .)
+          echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "watching: $pkgs"
+
+  bump:
+    needs: [preflight, discover]
+    if: needs.discover.outputs.pkgs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      # One upstream being unreachable is no reason to stop watching the rest.
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJSON(needs.discover.outputs.pkgs) }}
     permissions:
       contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v5
 
-      # Everything here is derived from Anthropic's signed index: the new
-      # version and its hash are read out of Packages only after InRelease
-      # verifies against the key committed in the PKGBUILD directory. A bump
-      # therefore can't be forged by whoever answers the HTTP request.
-      - name: Resolve the newest signed release
-        id: upstream
-        working-directory: PKGBUILDs/ya-claude
-        run: |
-          set -euo pipefail
-          APT=https://downloads.claude.ai/claude-desktop/apt/stable
-          curl -fsSLO "$APT/dists/stable/InRelease"
-          curl -fsSLO "$APT/dists/stable/main/binary-amd64/Packages"
+      # The script's own stdout is already key=value, so it is the step output
+      # verbatim. Printing nothing leaves version unset, and every step below
+      # is guarded on it.
+      - name: Resolve upstream
+        id: up
+        working-directory: PKGBUILDs/${{ matrix.pkg }}
+        run: ./upstream >> "$GITHUB_OUTPUT"
 
-          export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
-          gpg --batch --quiet --import anthropic-release-signing.key
-          FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
-          test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
-          gpg --batch --verify InRelease
-
-          WANT=$(awk '/^SHA256:/{s=1;next} /^[A-Za-z][A-Za-z0-9-]*:/{s=0}
-                      s && $3=="main/binary-amd64/Packages" && length($1)==64 {print $1; exit}' InRelease)
-          echo "${WANT}  Packages" | sha256sum -c --status -
-
-          # Emit one "version sha256" pair per stanza and take the highest, rather
-          # than trusting the order stanzas happen to appear in. Version resets at
-          # each stanza head so a stanza without a SHA256 can't donate its version
-          # to the next one.
-          NEW=$(awk '
-                  $1=="Package:" { v="" }
-                  $1=="Version:" { v=$2 }
-                  $1=="SHA256:"  { if (v!="") { print v, $2; v="" } }
-                ' Packages | sort -V | tail -1)
-          test -n "$NEW"
-          echo "version=${NEW% *}"  >> "$GITHUB_OUTPUT"
-          echo "sha256=${NEW#* }"   >> "$GITHUB_OUTPUT"
-          echo "current=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)" >> "$GITHUB_OUTPUT"
-          rm -f InRelease Packages
-
-      - name: Bump
-        if: steps.upstream.outputs.version != steps.upstream.outputs.current
-        working-directory: PKGBUILDs/ya-claude
-        run: |
-          sed -i "s/^pkgver=.*/pkgver=${{ steps.upstream.outputs.version }}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
-
-      - name: Open PR
-        id: pr
-        if: steps.upstream.outputs.version != steps.upstream.outputs.current
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.BUMP_PAT }}
-          branch: bump/ya-claude-${{ steps.upstream.outputs.version }}
-          delete-branch: true
-          title: "ya-claude ${{ steps.upstream.outputs.version }}"
-          commit-message: "ya-claude: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
-          body: |
-            Upstream published `${{ steps.upstream.outputs.version }}`.
-
-            Version and hash were read from Anthropic's `Packages` index after
-            `InRelease` verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
-            The build re-runs that same verification, so CI fails if this is wrong.
-
-      - name: Queue the merge
-        if: steps.pr.outputs.pull-request-number
-        env:
-          GH_TOKEN: ${{ secrets.BUMP_PAT }}
-        run: gh pr merge --auto --merge "${{ steps.pr.outputs.pull-request-number }}"
-
-  ya-claude-code:
-    needs: preflight
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v5
-
-      # Claude Code publishes a per-release manifest with a detached signature
-      # rather than an apt index, so the shape differs from ya-claude even though
-      # the signing identity is the same.
-      - name: Resolve the newest signed release
-        id: upstream
-        working-directory: PKGBUILDs/ya-claude-code
-        run: |
-          set -euo pipefail
-          REL=https://downloads.claude.ai/claude-code-releases
-
-          # This pointer is unsigned. It only selects which release to take, and
-          # every candidate it can name is a genuine signed Anthropic build; the
-          # manifest check below is what establishes authenticity.
-          NEW=$(curl -fsSL "$REL/latest" | tr -d '[:space:]')
-          echo "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
-
-          curl -fsSLo manifest.json     "$REL/$NEW/manifest.json"
-          curl -fsSLo manifest.json.sig "$REL/$NEW/manifest.json.sig"
-
-          export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
-          gpg --batch --quiet --import anthropic-release-signing.key
-          FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
-          test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
-          gpg --batch --verify manifest.json.sig manifest.json
-
-          MVER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' manifest.json | head -1)
-          test "$MVER" = "$NEW"
-
-          SUM=$(sed -n '/"linux-x64"[[:space:]]*:/,/}/p' manifest.json \
-                | sed -n 's/.*"checksum"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' | head -1)
-          test -n "$SUM"
-
-          echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "sha256=$SUM"  >> "$GITHUB_OUTPUT"
-          echo "current=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)" >> "$GITHUB_OUTPUT"
-          rm -f manifest.json manifest.json.sig
-
-      - name: Bump
-        if: steps.upstream.outputs.version != steps.upstream.outputs.current
-        working-directory: PKGBUILDs/ya-claude-code
-        run: |
-          sed -i "s/^pkgver=.*/pkgver=${{ steps.upstream.outputs.version }}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
-
-      # Prose for whoever reads the PR, and the only input in this job that is
-      # not signed. Nothing is derived from it — the version and checksum are
-      # already fixed by the verified manifest above — so a changelog that is
-      # missing, unpublished, or wrong costs the PR its notes and nothing else.
-      # Failures are swallowed for the same reason: a bump must not be blocked
-      # by an unauthenticated source.
-      - name: Collect the changelog entries this bump crosses
+      - name: Collect release notes
         id: notes
-        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        if: steps.up.outputs.version
+        working-directory: PKGBUILDs/${{ matrix.pkg }}
         env:
-          NEW: ${{ steps.upstream.outputs.version }}
-          CUR: ${{ steps.upstream.outputs.current }}
+          CUR: ${{ steps.up.outputs.current }}
+          NEW: ${{ steps.up.outputs.version }}
         run: |
-          CL=https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
-          curl -fsSL "$CL" -o /tmp/CHANGELOG.md || exit 0
-
-          # The file is newest-first, so everything between the new heading and
-          # the current one is exactly the releases being crossed — including
-          # any intermediate version that never got its own section. head caps
-          # the damage when the current version is old enough to have fallen off
-          # the file entirely, which would otherwise paste its whole history.
-          awk -v new="## $NEW" -v cur="## $CUR" \
-              '$0==new{p=1} $0==cur{p=0} p' /tmp/CHANGELOG.md \
-            | head -300 > /tmp/notes.md
-
+          [ -x ./notes ] || exit 0
+          ./notes "$CUR" "$NEW" > /tmp/notes.md || exit 0
           test -s /tmp/notes.md || exit 0
-
           D="notes-$(openssl rand -hex 8)"
           {
-            echo "notes<<$D"
-            echo "## Upstream changelog"
-            echo
+            echo "body<<$D"
             grep -v "^$D\$" /tmp/notes.md
             echo "$D"
           } >> "$GITHUB_OUTPUT"
 
       - name: Open PR
         id: pr
-        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        if: steps.up.outputs.version
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.BUMP_PAT }}
-          branch: bump/ya-claude-code-${{ steps.upstream.outputs.version }}
+          branch: bump/${{ matrix.pkg }}-${{ steps.up.outputs.version }}
           delete-branch: true
-          title: "ya-claude-code ${{ steps.upstream.outputs.version }}"
-          commit-message: "ya-claude-code: ${{ steps.upstream.outputs.current }} -> ${{ steps.upstream.outputs.version }}"
+          title: "${{ matrix.pkg }} ${{ steps.up.outputs.version }}"
+          commit-message: "${{ matrix.pkg }}: ${{ steps.up.outputs.current }} -> ${{ steps.up.outputs.version }}"
           body: |
-            Upstream published `${{ steps.upstream.outputs.version }}`.
+            Upstream published `${{ steps.up.outputs.version }}`, replacing
+            `${{ steps.up.outputs.current }}`. The build re-runs whatever
+            verification this package's PKGBUILD performs, so CI fails if the
+            values below are wrong.
 
-            The checksum was read from that release's manifest after its detached
-            signature verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`,
-            and the manifest's own version field was checked to match — a validly
-            signed manifest for a different release is rejected. The build re-runs
-            all of it.
+            ${{ steps.notes.outputs.body }}
 
-            The changelog below is quoted from upstream's repository, which is
-            unsigned. It is context for the reader; nothing in this bump derives
-            from it.
-
-            ${{ steps.notes.outputs.notes }}
-
+      # A package opts out by carrying .no-auto-merge — for a proprietary blob,
+      # or a codebase whose PKGBUILD holds version-specific build workarounds,
+      # "the build passed" is not the same as "this should ship".
       - name: Queue the merge
         if: steps.pr.outputs.pull-request-number
         env:
           GH_TOKEN: ${{ secrets.BUMP_PAT }}
-        run: gh pr merge --auto --merge "${{ steps.pr.outputs.pull-request-number }}"
+          PR: ${{ steps.pr.outputs.pull-request-number }}
+        run: |
+          if [ -e "PKGBUILDs/${{ matrix.pkg }}/.no-auto-merge" ]; then
+            echo "::notice::#$PR left for review; ${{ matrix.pkg }} opts out of auto-merge"
+            exit 0
+          fi
+          gh pr merge --auto --merge "$PR"

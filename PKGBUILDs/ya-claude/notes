@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Appended to the bump PR body. Claude Desktop publishes no changelog, so this
+# is only a statement of where the two values in the diff came from.
+set -euo pipefail
+
+cat <<'EOF'
+Version and hash were read from Anthropic's `Packages` index after `InRelease`
+verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
+EOF

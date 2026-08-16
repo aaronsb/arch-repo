@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Appended to the bump PR body: where the checksum came from, then the releases
+# this bump crosses.
+#
+# The changelog is the only unsigned input anywhere in the bump, and it is
+# fenced off from everything that matters. The version and checksum are already
+# fixed by the GPG-verified manifest before this runs, failures here are
+# swallowed rather than blocking a bump on an unauthenticated fetch, and the
+# text below says plainly that nothing derives from the quote.
+set -euo pipefail
+
+CUR=${1:?current version}
+NEW=${2:?new version}
+
+cat <<'EOF'
+The checksum was read from that release's manifest after its detached signature
+verified against `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`, and the manifest's
+own version field was checked to match — a validly signed manifest for a
+different release is rejected.
+
+The changelog below is quoted from upstream's repository, which is unsigned. It
+is context for the reader; nothing in this bump derives from it.
+
+EOF
+
+CL=https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+curl -fsSL "$CL" -o "$work/CHANGELOG.md" || exit 0
+
+# The file is newest-first, so everything between the new heading and the
+# current one is exactly the releases being crossed — including any intermediate
+# version that never got a section of its own. head caps the damage when the
+# current version is old enough to have fallen off the file entirely, which
+# would otherwise paste its whole history.
+notes=$(awk -v new="## $NEW" -v cur="## $CUR" \
+            '$0==new{p=1} $0==cur{p=0} p' "$work/CHANGELOG.md" | head -300)
+
+test -n "$notes" || exit 0
+printf '## Upstream changelog\n\n%s\n' "$notes"

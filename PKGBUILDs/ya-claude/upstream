@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Everything here is derived from Anthropic's signed index: the new version and
+# its hash are read out of Packages only after InRelease verifies against the key
+# committed beside this script. A bump therefore cannot be forged by whoever
+# answers the HTTP request.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+APT=https://downloads.claude.ai/claude-desktop/apt/stable
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+
+curl -fsSL -o "$work/InRelease" "$APT/dists/stable/InRelease"
+curl -fsSL -o "$work/Packages"  "$APT/dists/stable/main/binary-amd64/Packages"
+
+export GNUPGHOME="$work/gnupg"; install -dm700 "$GNUPGHOME"
+gpg --batch --quiet --import anthropic-release-signing.key
+FPR=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr:/{print $10; exit}')
+test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+gpg --batch --verify "$work/InRelease" >/dev/null 2>&1
+
+# InRelease authenticates Packages; Packages authenticates the .deb. Scope the
+# lookup to the SHA256 block — the same filenames recur under SHA512.
+WANT=$(awk '/^SHA256:/{s=1;next} /^[A-Za-z][A-Za-z0-9-]*:/{s=0}
+            s && $3=="main/binary-amd64/Packages" && length($1)==64 {print $1; exit}' "$work/InRelease")
+test -n "$WANT"
+(cd "$work" && echo "${WANT}  Packages" | sha256sum -c --status -)
+
+# One "version sha256" pair per stanza, highest wins, rather than trusting the
+# order stanzas happen to appear in. Version resets at each stanza head so a
+# stanza without a SHA256 cannot donate its version to the next one.
+NEW=$(awk '
+        $1=="Package:" { v="" }
+        $1=="Version:" { v=$2 }
+        $1=="SHA256:"  { if (v!="") { print v, $2; v="" } }
+      ' "$work/Packages" | sort -V | tail -1)
+test -n "$NEW"
+
+version=${NEW% *}
+sha256=${NEW#* }
+current=$(current_pkgver)
+
+is_newer "$version" "$current" || exit 0
+
+set_pkgver "$version"
+set_first_sum sha256 "$sha256"
+emit_bump "$current" "$version"
