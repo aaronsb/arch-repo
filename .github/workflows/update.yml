@@ -12,9 +12,11 @@ on:
 #
 #   upstream        required to be watched. Runs with cwd set to the package
 #                   directory. Prints nothing when already current; prints
-#                   current= and version= and rewrites the PKGBUILD when not.
+#                   current=, current_rel=, version= and pkgrel= and rewrites
+#                   the PKGBUILD when not.
 #   notes           optional. Run as `notes <current> <new>`; stdout is appended
-#                   to the pull request body.
+#                   to the pull request body. Only consulted when the version
+#                   moved — upstream has no changelog for a repackaging.
 #   .no-auto-merge  optional. Its presence means the PR waits for a human even
 #                   when the build is green.
 jobs:
@@ -79,7 +81,7 @@ jobs:
 
       - name: Collect release notes
         id: notes
-        if: steps.up.outputs.version
+        if: steps.up.outputs.version && steps.up.outputs.version != steps.up.outputs.current
         working-directory: PKGBUILDs/${{ matrix.pkg }}
         env:
           CUR: ${{ steps.up.outputs.current }}
@@ -95,21 +97,26 @@ jobs:
             echo "$D"
           } >> "$GITHUB_OUTPUT"
 
+      # Everything names the full pkgver-pkgrel, which is the only form that is
+      # unique. Two successive repackagings of one release are both "1.2.0", and
+      # under the old naming the second would have reopened the first one's
+      # branch and merged a stale recipe under a title that looked right.
       - name: Open PR
         id: pr
         if: steps.up.outputs.version
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.BUMP_PAT }}
-          branch: bump/${{ matrix.pkg }}-${{ steps.up.outputs.version }}
+          branch: bump/${{ matrix.pkg }}-${{ steps.up.outputs.version }}-${{ steps.up.outputs.pkgrel }}
           delete-branch: true
-          title: "${{ matrix.pkg }} ${{ steps.up.outputs.version }}"
-          commit-message: "${{ matrix.pkg }}: ${{ steps.up.outputs.current }} -> ${{ steps.up.outputs.version }}"
+          title: "${{ matrix.pkg }} ${{ steps.up.outputs.version }}-${{ steps.up.outputs.pkgrel }}"
+          commit-message: "${{ matrix.pkg }}: ${{ steps.up.outputs.current }}-${{ steps.up.outputs.current_rel }} -> ${{ steps.up.outputs.version }}-${{ steps.up.outputs.pkgrel }}"
           body: |
-            Upstream published `${{ steps.up.outputs.version }}`, replacing
-            `${{ steps.up.outputs.current }}`. The build re-runs whatever
-            verification this package's PKGBUILD performs, so CI fails if the
-            values below are wrong.
+            ${{ steps.up.outputs.version == steps.up.outputs.current
+                && format('The recipe for `{0}` changed in its source repository with no new release behind it, so the same upstream code is repackaged as `{0}-{1}`.', steps.up.outputs.version, steps.up.outputs.pkgrel)
+                || format('Upstream published `{0}`, replacing `{1}`.', steps.up.outputs.version, steps.up.outputs.current) }}
+            The build re-runs whatever verification this package's PKGBUILD
+            performs, so CI fails if the values below are wrong.
 
             ${{ steps.notes.outputs.body }}
 

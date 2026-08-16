@@ -4,8 +4,8 @@
 #
 #   * cwd is the package directory, and $PWD/PKGBUILD exists
 #   * exit 0 having printed nothing  -> already current, no work
-#   * exit 0 having printed current= and version= -> PKGBUILD has been rewritten
-#     in place and those two values describe the move
+#   * exit 0 having printed current=, current_rel=, version= and pkgrel=
+#     -> PKGBUILD has been rewritten in place and those values describe the move
 #   * any other exit -> the run fails loudly
 #
 # Discovery lives in the package rather than the workflow because it does not
@@ -19,19 +19,62 @@ set -euo pipefail
 
 # ---------------------------------------------------------------- reporting --
 
-# The workflow decides whether to open a PR purely from these two lines, so a
+# The workflow decides whether to open a PR purely from these lines, so a
 # script that rewrites the PKGBUILD without calling this has made a change that
 # nothing will ever propose.
+#
+# Four values rather than two, because a bump is no longer always a version
+# move. A recipe corrected under an unchanged version is a pkgrel bump, and
+# `current` and `version` on their own can neither tell that apart from a no-op
+# nor name a branch that does not collide with the last one. Both version
+# fields stay bare pkgver so that a package's `notes` script still receives
+# something it can look up upstream.
 emit_bump() {
-  printf 'current=%s\n' "$1"
-  printf 'version=%s\n'  "$2"
+  printf 'current=%s\n'     "$1"
+  printf 'current_rel=%s\n' "$2"
+  printf 'version=%s\n'     "$3"
+  printf 'pkgrel=%s\n'      "$4"
 }
 
-current_pkgver() { awk -F= '/^pkgver=/{print $2; exit}' PKGBUILD; }
+# --------------------------------------------------------------- inspection --
+
+# Each of these reads PKGBUILD in the current directory unless handed another
+# file, because sync_github_package has to ask the same questions of a recipe
+# it has just fetched and of the one this repository has committed.
+
+current_pkgver() { awk -F= '/^pkgver=/{print $2; exit}' "${1:-PKGBUILD}"; }
+current_pkgrel() { awk -F= '/^pkgrel=/{print $2; exit}' "${1:-PKGBUILD}"; }
 
 # Compares as versions, not strings: 3.9.10 is newer than 3.9.9, and a plain
 # string test would have it the other way around.
 is_newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]; }
+
+# The file a PKGBUILD's install= names, or nothing if it names none.
+#
+# The field is shell, not a filename: fake-battery-nut writes
+# install=${pkgname}.install. Reading it literally asks for a file whose name
+# contains a dollar sign, and the 404 that comes back reads like a missing file
+# rather than an unexpanded variable.
+install_file() {
+  local f=${1:-PKGBUILD} inst name
+  inst=$(awk -F= '/^install=/{gsub(/["'"'"']/,"",$2); print $2; exit}' "$f")
+  [ -n "$inst" ] || return 0
+  name=$(awk -F= '/^pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' "$f")
+  printf '%s' "$inst" | sed "s/\${pkgname}/${name}/g; s/\$pkgname/${name}/g"
+}
+
+# The first real checksum in an array, or nothing if the recipe has no slot for
+# one. The counterpart of set_first_sum, and it has to agree with it about which
+# entry is "first" — see that function for why the match is written this way.
+first_sum() {
+  awk -v kind="$1" '
+    !done && index($0, kind "sums=") == 1 { inarr = 1 }
+    inarr && !done && match($0, /'"'"'[0-9a-fA-F]{64}'"'"'/) {
+      print substr($0, RSTART + 1, RLENGTH - 2)
+      done = 1
+    }
+  ' "${2:-PKGBUILD}"
+}
 
 # ---------------------------------------------------------------- discovery --
 
@@ -80,63 +123,127 @@ md5_of_url() {
 # the recipe from the branch and both moving values from the tag removes the
 # circularity rather than automating a walk around it.
 #
-# It also means a source repository's own pkgver and sha256sums stop mattering:
-# they are overwritten here, so their drifting stale — which is what they have
-# all been doing — no longer reaches anyone.
+# It also means a source repository's own pkgver, pkgrel and sha256sums stop
+# mattering: they are overwritten here, so their drifting stale — which is what
+# they have all been doing — no longer reaches anyone.
 #
-# Detection is on the version only. A recipe edited without a new tag rides
-# along with the next bump.
+# Two kinds of change reach users, and they are not the same event:
+#
+#   upstream tagged        pkgver moves, pkgrel restarts at 1
+#   recipe changed only    pkgver holds, pkgrel is the committed one plus one
+#
+# The second used to be invisible. Detection was on the version alone, so a
+# packaging fix pushed without a tag — a missing dependency, a wrong install
+# path, a licence string namcap complains about — waited for whenever upstream
+# next happened to cut a release. For our own projects that is months, and the
+# person waiting is the one whose install is already broken.
+#
+# What is deliberately not detected is the source repository bumping its own
+# pkgrel with no other change. pkgrel is this repository's count of how many
+# times it has packaged a given release, so it is normalised away before the
+# comparison and a bare bump upstream reads here as no change at all.
 sync_github_package() {
-  local repo=$1 version current sha tarball
+  local repo=$1
+  local version current current_rel rel work inst sha
+
   version=$(github_latest "$repo")
   test -n "$version"
 
   current=$(current_pkgver)
-  is_newer "$version" "$current" || return 0
+  current_rel=$(current_pkgrel)
 
-  curl -fsSL -o PKGBUILD "https://raw.githubusercontent.com/${repo}/HEAD/PKGBUILD"
-  test -s PKGBUILD
+  # Rendered somewhere else first. Writing straight over PKGBUILD would leave a
+  # truncated recipe in the tree the moment a fetch failed halfway, and there is
+  # no way to know whether there is anything to propose until the finished
+  # rendering can be held up against what is committed.
+  work=$(mktemp -d)
+  curl -fsSL -o "$work/PKGBUILD" "https://raw.githubusercontent.com/${repo}/HEAD/PKGBUILD"
+  test -s "$work/PKGBUILD"
 
   # A PKGBUILD's install= names a file that lives beside it, not a URL, so it
   # has to be fetched too or the recipe references something that was never
   # copied — and both the AUR push and a local makepkg would fail on it.
-  local inst name
-  inst=$(awk -F= '/^install=/{gsub(/["'"'"']/,"",$2); print $2; exit}' PKGBUILD)
+  inst=$(install_file "$work/PKGBUILD")
   if [ -n "$inst" ]; then
-    # The field is shell, not a filename: fake-battery-nut writes
-    # install=${pkgname}.install. Fetching that literally asks for a file whose
-    # name contains a dollar sign and gets a 404 that looks like a missing file
-    # rather than an unexpanded variable.
-    name=$(awk -F= '/^pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' PKGBUILD)
-    inst=$(printf '%s' "$inst" | sed "s/\${pkgname}/${name}/g; s/\$pkgname/${name}/g")
-    curl -fsSL -o "$inst" "https://raw.githubusercontent.com/${repo}/HEAD/${inst}"
-    test -s "$inst"
+    curl -fsSL -o "$work/$inst" "https://raw.githubusercontent.com/${repo}/HEAD/${inst}"
+    test -s "$work/$inst"
   fi
 
-  set_pkgver "$version"
+  # Only a genuinely newer tag moves pkgver. Upstream reporting what we already
+  # ship is the ordinary case here, and it has to render to exactly what is
+  # committed or every run would look like a change.
+  if is_newer "$version" "$current"; then
+    rel=1
+  else
+    version=$current
+    rel=$current_rel
+  fi
+  set_release "$version" "$rel" "$work/PKGBUILD"
 
   # Not every package downloads a tarball. obsbot-camera-control sources git at
   # the tag and carries sha256sums=('SKIP'), so there is nothing to hash and no
-  # slot to write into — makepkg reaches the same commit through the tag. Asking
-  # anyway would download an archive to compute a value with nowhere to go.
-  if grep -qE "sums=" PKGBUILD && awk '/sums=/{a=1} a && /[0-9a-f]{64}/{found=1} END{exit !found}' PKGBUILD; then
-    tarball="https://github.com/${repo}/archive/v${version}.tar.gz"
-    sha=$(sha256_of_url "$tarball")
+  # slot to write into — makepkg reaches the same commit through the tag. A
+  # recipe with no 64-hex entry is one of those, and asking anyway would
+  # download an archive to compute a value with nowhere to go.
+  if [ -n "$(first_sum sha256 "$work/PKGBUILD")" ]; then
+    # The same tag names the same tarball, so the hash already committed here is
+    # still the answer; fetching the archive again every night to recompute it
+    # would buy nothing. A recipe that has only just grown a tarball has no
+    # committed hash to reuse and falls through to fetching one.
+    sha=""
+    if [ "$version" = "$current" ]; then sha=$(first_sum sha256 PKGBUILD); fi
+    if [ -z "$sha" ]; then
+      sha=$(sha256_of_url "https://github.com/${repo}/archive/v${version}.tar.gz")
+    fi
     test -n "$sha"
-    set_first_sum sha256 "$sha"
+    set_first_sum sha256 "$sha" "$work/PKGBUILD"
   fi
 
-  emit_bump "$current" "$version"
+  if ! recipe_changed "$work" "$inst"; then
+    rm -rf "$work"
+    return 0
+  fi
+
+  # Same software, packaged differently, which is the question pkgrel answers.
+  if [ "$version" = "$current" ]; then
+    rel=$((current_rel + 1))
+    set_release "$version" "$rel" "$work/PKGBUILD"
+  fi
+
+  cp "$work/PKGBUILD" PKGBUILD
+  if [ -n "$inst" ]; then cp "$work/$inst" "$inst"; fi
+  rm -rf "$work"
+
+  emit_bump "$current" "$current_rel" "$version" "$rel"
+}
+
+# Whether the recipe rendered into $1 says anything different from the one this
+# repository has committed. Only the files sync_github_package would go on to
+# copy into place are compared, since those are the whole of what it changes.
+#
+# A missing committed install file counts as a difference rather than an error:
+# a recipe that grows an install= hook has changed, and the fetch above already
+# has the file it needs.
+recipe_changed() {
+  local work=$1 inst=$2
+  cmp -s "$work/PKGBUILD" PKGBUILD || return 0
+  [ -z "$inst" ] || cmp -s "$work/$inst" "$inst" || return 0
+  return 1
 }
 
 # ------------------------------------------------------------------ rewrite --
 
-set_pkgver() {
-  sed -i "s/^pkgver=.*/pkgver=$1/" PKGBUILD
-  # A new upstream version restarts the packaging revision. Carrying the old
-  # pkgrel forward would claim this is the second packaging of a release that
-  # has only been packaged once.
-  sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+# Both halves of the version are written together because a package version is
+# only meaningful as a pair: 1.2.0-3 is a complete answer and 1.2.0 is not.
+# Splitting them invited the bug this replaced, where writing pkgver silently
+# reset pkgrel to 1 and a repackaging of an unchanged release could not be
+# expressed at all.
+#
+# A watcher that fires only on a new upstream release passes 1: carrying the old
+# pkgrel forward would claim this is the second packaging of a release that has
+# only been packaged once.
+set_release() {
+  sed -i "s/^pkgver=.*/pkgver=$1/; s/^pkgrel=.*/pkgrel=$2/" "${3:-PKGBUILD}"
 }
 
 # Replaces the first real checksum in an array. Every PKGBUILD here puts the
@@ -157,7 +264,7 @@ set_pkgver() {
 # the old hash left in place next to a new pkgver, which is a build failure at
 # best and the wrong payload at worst. SKIP is never matched: it is not hex.
 set_first_sum() {
-  local kind=$1 sum=$2
+  local kind=$1 sum=$2 file=${3:-PKGBUILD}
   awk -v kind="$kind" -v sum="$sum" '
     !done && index($0, kind "sums=") == 1 { inarr = 1 }
     inarr && !done && match($0, /'"'"'[0-9a-fA-F]{64}'"'"'/) {
@@ -165,5 +272,5 @@ set_first_sum() {
       done = 1
     }
     { print }
-  ' PKGBUILD > PKGBUILD.tmp && mv PKGBUILD.tmp PKGBUILD
+  ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
 }
