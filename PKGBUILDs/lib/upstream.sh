@@ -100,19 +100,32 @@ sync_github_package() {
   # A PKGBUILD's install= names a file that lives beside it, not a URL, so it
   # has to be fetched too or the recipe references something that was never
   # copied — and both the AUR push and a local makepkg would fail on it.
-  local inst
+  local inst name
   inst=$(awk -F= '/^install=/{gsub(/["'"'"']/,"",$2); print $2; exit}' PKGBUILD)
   if [ -n "$inst" ]; then
+    # The field is shell, not a filename: fake-battery-nut writes
+    # install=${pkgname}.install. Fetching that literally asks for a file whose
+    # name contains a dollar sign and gets a 404 that looks like a missing file
+    # rather than an unexpanded variable.
+    name=$(awk -F= '/^pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' PKGBUILD)
+    inst=$(printf '%s' "$inst" | sed "s/\${pkgname}/${name}/g; s/\$pkgname/${name}/g")
     curl -fsSL -o "$inst" "https://raw.githubusercontent.com/${repo}/HEAD/${inst}"
     test -s "$inst"
   fi
 
-  tarball="https://github.com/${repo}/archive/v${version}.tar.gz"
-  sha=$(sha256_of_url "$tarball")
-  test -n "$sha"
-
   set_pkgver "$version"
-  set_first_sum sha256 "$sha"
+
+  # Not every package downloads a tarball. obsbot-camera-control sources git at
+  # the tag and carries sha256sums=('SKIP'), so there is nothing to hash and no
+  # slot to write into — makepkg reaches the same commit through the tag. Asking
+  # anyway would download an archive to compute a value with nowhere to go.
+  if grep -qE "sums=" PKGBUILD && awk '/sums=/{a=1} a && /[0-9a-f]{64}/{found=1} END{exit !found}' PKGBUILD; then
+    tarball="https://github.com/${repo}/archive/v${version}.tar.gz"
+    sha=$(sha256_of_url "$tarball")
+    test -n "$sha"
+    set_first_sum sha256 "$sha"
+  fi
+
   emit_bump "$current" "$version"
 }
 
@@ -126,11 +139,31 @@ set_pkgver() {
   sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 }
 
-# Replaces the first entry of a checksum array. Every PKGBUILD here puts the
-# upstream artifact first and local files after it, so "first" is the one that
-# moves with the version; the rest are files in this repository whose hashes
-# have nothing to do with upstream.
+# Replaces the first real checksum in an array. Every PKGBUILD here puts the
+# upstream artifact first and local files or SKIP entries after it, so "first"
+# is the one that moves with the version.
+#
+# Matching the first 64-hex token from the sums= line onward, rather than
+# anchoring to the opening quote on that same line, because both layouts are in
+# use here:
+#
+#   sha256sums=('abc...' 'SKIP')      ya-claude, mlterm-fb
+#   sha256sums=(                      bosectl-qt
+#       'abc...'
+#       'SKIP'
+#   )
+#
+# The anchored version silently did nothing on the second form — no error, and
+# the old hash left in place next to a new pkgver, which is a build failure at
+# best and the wrong payload at worst. SKIP is never matched: it is not hex.
 set_first_sum() {
   local kind=$1 sum=$2
-  sed -i "0,/^${kind}sums=('[^']*'/s//${kind}sums=('${sum}'/" PKGBUILD
+  awk -v kind="$kind" -v sum="$sum" '
+    !done && index($0, kind "sums=") == 1 { inarr = 1 }
+    inarr && !done && match($0, /'"'"'[0-9a-fA-F]{64}'"'"'/) {
+      $0 = substr($0, 1, RSTART) sum substr($0, RSTART + RLENGTH - 1)
+      done = 1
+    }
+    { print }
+  ' PKGBUILD > PKGBUILD.tmp && mv PKGBUILD.tmp PKGBUILD
 }
