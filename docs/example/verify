@@ -76,6 +76,30 @@ else
   echo "makepkg not installed; skipping the parse check"
 fi
 
+echo "the Makefile promises what the contract asks for"
+for t in help check package release version; do
+  if grep -qE "^${t}:" Makefile; then printf '  ok    %-32s %s\n' "target" "$t"
+  else printf '  FAIL  %-32s %s\n' "missing target" "$t"; fail=1; fi
+done
+# The one target that must not exist. Publishing belongs to arch-repo.
+if grep -qE '^(aur|publish-aur|publish):' Makefile; then
+  printf '  FAIL  %-32s %s\n' "publishes itself" "Makefile"; fail=1
+else
+  printf '  ok    %-32s %s\n' "nothing publishes" "no aur target"
+fi
+expect "NAME from PKGBUILD"    "example-app" "$(make -s -p 2>/dev/null | sed -n 's/^NAME := //p' | head -1)"
+expect "SRCNAME from _repo"    "example-app" "$(make -s -p 2>/dev/null | sed -n 's/^SRCNAME := //p' | head -1)"
+if make -s release >/dev/null 2>&1; then printf '  ok    %-32s %s\n' "make release runs" "-"
+else printf '  FAIL  %-32s %s\n' "make release runs" "-"; fail=1; fi
+# version exits non-zero here on purpose: docs/example carries no project
+# manifest, so there is no version to report, and it says so rather than
+# inventing one.
+if make -s version >/dev/null 2>&1; then
+  printf '  FAIL  %-32s %s\n' "make version" "succeeded with no manifest"; fail=1
+else
+  printf '  ok    %-32s %s\n' "make version" "fails with no manifest"
+fi
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "the example is still something arch-repo can read"
