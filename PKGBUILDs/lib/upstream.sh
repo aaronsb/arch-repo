@@ -55,12 +55,23 @@ is_newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | ta
 # install=${pkgname}.install. Reading it literally asks for a file whose name
 # contains a dollar sign, and the 404 that comes back reads like a missing file
 # rather than an unexpanded variable.
+#
+# _pkgname is expanded as well as pkgname, because a VCS recipe's pkgname ends
+# in -git while the files beside it do not: example-app-git carries
+# example-app.install, and only _pkgname names it.
+#
+# Expanded by substitution rather than by sourcing the recipe. Sourcing would
+# handle every variable a PKGBUILD can define, and would also execute a file
+# this repository has just fetched from a source repository, before anything has
+# reviewed it.
 install_file() {
-  local f=${1:-PKGBUILD} inst name
+  local f=${1:-PKGBUILD} inst name uname
   inst=$(awk -F= '/^install=/{gsub(/["'"'"']/,"",$2); print $2; exit}' "$f")
   [ -n "$inst" ] || return 0
-  name=$(awk -F= '/^pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' "$f")
-  printf '%s' "$inst" | sed "s/\${pkgname}/${name}/g; s/\$pkgname/${name}/g"
+  name=$(awk  -F= '/^pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' "$f")
+  uname=$(awk -F= '/^_pkgname=/{gsub(/[()'"'"'"]/,"",$2); print $2; exit}' "$f")
+  printf '%s' "$inst" \
+    | sed "s/\${_pkgname}/${uname}/g; s/\$_pkgname/${uname}/g; s/\${pkgname}/${name}/g; s/\$pkgname/${name}/g"
 }
 
 # The first real checksum in an array, or nothing if the recipe has no slot for
