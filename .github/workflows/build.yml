@@ -58,6 +58,38 @@ jobs:
           echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
 
+      # A package may depend on something that lives in the AUR rather than in
+      # any repository pacman can reach — yay-friend depends on yay, which is
+      # itself an AUR package. makepkg -s cannot resolve that, and it has no
+      # per-dependency escape: -d skips the lot and takes the makedepends with
+      # it, so the build then fails on a missing git or go instead.
+      #
+      # A package lists such names in .aur-deps, one per line, and each gets a
+      # stub built and installed here: an empty package that provides the name
+      # and nothing else. The dependency resolves, and depends() stays exactly
+      # as written in what gets published — dropping the name from the recipe
+      # would build fine and then lie to whoever installs the result.
+      - name: Stub dependencies that live in the AUR
+        working-directory: PKGBUILDs/${{ matrix.pkg }}
+        run: |
+          [ -f .aur-deps ] || exit 0
+          install -d -o builder /tmp/stub
+          while read -r d; do
+            # Blank lines and comments: the file explains itself to a reader,
+            # and a stub named "# yay is itself an AUR package" builds nothing.
+            case "$d" in ''|'#'*) continue ;; esac
+            cat > /tmp/stub/PKGBUILD <<EOF
+          pkgname=aur-dep-stub-${d}
+          pkgver=0
+          pkgrel=1
+          arch=('any')
+          provides=('${d}')
+          EOF
+            ( cd /tmp/stub && sudo -u builder makepkg -f --noconfirm && pacman -U --noconfirm ./*.pkg.tar.zst )
+            rm -f /tmp/stub/*.pkg.tar.zst
+            echo "::notice::stubbed AUR dependency ${d} for ${{ matrix.pkg }}"
+          done < .aur-deps
+
       # -s is kept deliberately: nothing here needs a dependency at build time,
       # but resolving them proves every name in depends() exists in the repos,
       # which is the failure a hand-assembled list actually has.
@@ -297,7 +329,7 @@ jobs:
           # workspace carries no usable git metadata inside this container, which
           # is the same instability the note above records about HOME.
           files=$(ls -A "PKGBUILDs/${PKG}" \
-                  | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow')
+                  | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow|\.aur-deps')
           test -n "$files"
           for f in $files; do cp "PKGBUILDs/${PKG}/$f" /tmp/aur/; done
           chown -R builder:builder /tmp/aur

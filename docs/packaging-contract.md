@@ -55,6 +55,20 @@ that string is what `yay` and `paru` compare against.
 The obligation a VCS package places on the repository is that the default branch
 builds at HEAD, always.
 
+## Dependencies that live in the AUR
+
+A package may depend on something no pacman repository carries — `yay-friend`
+depends on `yay`, itself an AUR package. `makepkg -s` cannot resolve that, and
+it has no per-dependency escape: `-d` skips the lot and takes the makedepends
+with it, so the build fails on a missing `git` or `go` instead.
+
+List such names in `PKGBUILDs/<pkg>/.aur-deps`, one per line, blank lines and
+`#` comments ignored. `arch-repo` builds and installs a stub for each — an empty
+package that provides the name and nothing else — before the build.
+
+Leave the name in `depends()`. Dropping it would build just as well and then lie
+to whoever installs the result; the stub exists so the recipe can stay truthful.
+
 ## What arch-repo owns
 
 Declare these so the recipe is valid on its own. Do not maintain them:

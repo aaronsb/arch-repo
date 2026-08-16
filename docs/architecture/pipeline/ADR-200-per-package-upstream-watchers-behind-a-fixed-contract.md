@@ -55,6 +55,12 @@ workflow owns everything else and names no package.
   since upstream publishes no changelog for a repackaging.
 - **`.no-auto-merge`** — optional. Its presence holds the pull request for a
   human even when the build is green.
+- **`.namcap-allow`** — optional. Regexes for namcap errors this package
+  knowingly accepts; anything else fails the build.
+- **`.aur-deps`** — optional. Dependency names that live in the AUR rather than
+  in any repository pacman can reach. Each gets a stub built and installed
+  before the build, because `makepkg -s` cannot resolve them and has no
+  per-dependency escape. The names stay in `depends()`.
 
 Shared helpers live in `PKGBUILDs/lib/upstream.sh`. `github_latest` asks for
 releases and falls back to tags, because the two disagree in both directions
