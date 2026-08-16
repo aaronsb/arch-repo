@@ -7,6 +7,12 @@ PKGBUILDs/*/*
 !PKGBUILDs/*/.SRCINFO
 !PKGBUILDs/*/.namcap-allow
 
+# Credentials staged for `gh secret set`. They live in GitHub as secrets; a copy
+# in the working tree is a convenience for setting them, not something a
+# checkout should ever carry. Ignored by prefix so a new one is covered the
+# moment it is written, rather than after someone remembers to add it.
+.env*
+
 # assembled repository
 repo/
 *.db
