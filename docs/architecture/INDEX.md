@@ -20,7 +20,7 @@ _PKGBUILD conventions, upstream verification, per-package decisions_
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [ADR-100](./packaging/ADR-100-one-packaging-contract-for-every-repository-arch-repo-publishes.md) | One packaging contract for every repository arch-repo publishes | Draft |
+| [ADR-100](./packaging/ADR-100-one-packaging-contract-for-every-repository-arch-repo-publishes.md) | One packaging contract for every repository arch-repo publishes | Accepted |
 
 ## Pipeline
 _CI, watching, building, and the automation between them_
