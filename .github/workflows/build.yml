@@ -60,7 +60,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg-${{ matrix.pkg }}
           path: PKGBUILDs/${{ matrix.pkg }}/*.pkg.tar.zst
@@ -80,7 +80,7 @@ jobs:
       # git is not a gh dependency but gh release shells out to it.
       - run: pacman -Syu --noconfirm --needed github-cli git
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
