@@ -114,10 +114,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # makepkg will not run as root, and --printsrcinfo is still makepkg.
+      # Nothing else is installed: base-devel carries bash, awk, sed and makepkg,
+      # and the example is read rather than built, so it needs no git and no
+      # network.
       - run: |
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory '*'
           sudo -u builder ./docs/example/verify
 
   # One check name that does not change when packages come and go. Branch
