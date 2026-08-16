@@ -300,6 +300,10 @@ jobs:
             exit 0
           fi
 
-          VER=$(awk -F= '/^pkgver=/{print $2}' PKGBUILD)
-          git commit -qm "${PKG} ${VER}"
+          # Both halves. Two successive repackagings of one release are both
+          # "1.1.0", so a message built from pkgver alone would title them
+          # identically and the AUR history would not say which push was which.
+          VER=$(awk -F= '/^pkgver=/{print $2; exit}' PKGBUILD)
+          REL=$(awk -F= '/^pkgrel=/{print $2; exit}' PKGBUILD)
+          git commit -qm "${PKG} ${VER}-${REL}"
           git push origin HEAD:refs/heads/master

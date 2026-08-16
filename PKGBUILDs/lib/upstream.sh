@@ -90,9 +90,20 @@ github_latest() {
   v=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
       | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1) || true
   if [ -z "${v:-}" ]; then
+    # Anchored at both ends, because a tag list carries no notion of a
+    # pre-release and `sort -V` prefers one:
+    #
+    #   $ printf 'v1.2.0\nv1.2.0-rc1\n' | sort -V | tail -1
+    #   v1.2.0-rc1
+    #
+    # So the first release candidate a repository tagged would have shipped as
+    # the release. `releases/latest` above has no such problem — GitHub excludes
+    # drafts and pre-releases from it, which is why ADR-100 asks our own
+    # repositories to publish releases rather than bare tags. This path is for
+    # upstreams that will never do that.
     v=$(curl -fsSL "https://api.github.com/repos/${repo}/tags" 2>/dev/null \
         | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-        | grep -E '^v?[0-9]+\.[0-9]+' | sort -V | tail -1) || true
+        | grep -E '^v?[0-9]+(\.[0-9]+)+$' | sort -V | tail -1) || true
   fi
   printf '%s' "${v#v}"
 }
