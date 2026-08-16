@@ -187,13 +187,15 @@ jobs:
   # pushed only after the package has actually built and published here, so a
   # broken PKGBUILD cannot reach it.
   aur:
-    needs: publish
+    # discover is already upstream of publish; it is named again only to bring
+    # its output into scope here.
+    needs: [discover, publish]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     strategy:
       # One package failing to reach the AUR is no reason to withhold the other.
       fail-fast: false
       matrix:
-        pkg: [ya-claude, ya-claude-code]
+        pkg: ${{ fromJSON(needs.discover.outputs.pkgs) }}
     # Same reasoning against a shared ref: two runs cloning, committing and
     # pushing the same AUR master concurrently means the loser is rejected as
     # non-fast-forward, and the bump it carried is simply lost. Keyed by package
