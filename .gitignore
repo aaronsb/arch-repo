@@ -9,6 +9,7 @@ PKGBUILDs/*/*
 !PKGBUILDs/*/upstream
 !PKGBUILDs/*/notes
 !PKGBUILDs/*/.no-auto-merge
+!PKGBUILDs/*/.aur-deps
 
 # Files a PKGBUILD references beside itself rather than downloading: pacman
 # install hooks, and licence texts that upstream ships outside the tarball.
