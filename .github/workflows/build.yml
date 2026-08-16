@@ -256,7 +256,19 @@ jobs:
           # A package the AUR does not carry yet clones as an empty repository
           # rather than failing, and the first push is what creates it.
           git clone -q "ssh://aur@aur.archlinux.org/${PKG}.git" /tmp/aur
-          cp "PKGBUILDs/${PKG}/PKGBUILD" "PKGBUILDs/${PKG}/anthropic-release-signing.key" /tmp/aur/
+
+          # What goes to the AUR is the package, not this repository's tooling.
+          # Taking the tracked files and subtracting the four CI-only names is
+          # the only version of this that stays correct as packages are added:
+          # the previous list was literally PKGBUILD plus the Claude signing key,
+          # so the first package without that key failed on a missing file, and
+          # any package with an .install or a bundled licence would have shipped
+          # to the AUR without it.
+          files=$(git -C "$GITHUB_WORKSPACE" ls-files "PKGBUILDs/${PKG}" \
+                  | xargs -n1 basename \
+                  | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow')
+          test -n "$files"
+          for f in $files; do cp "PKGBUILDs/${PKG}/$f" /tmp/aur/; done
           chown -R builder:builder /tmp/aur
 
           # makepkg will not run as root, and --printsrcinfo is still makepkg.
@@ -265,7 +277,7 @@ jobs:
 
           git config user.name  'Aaron Bockelie'
           git config user.email 'aaronsb@gmail.com'
-          git add PKGBUILD .SRCINFO anthropic-release-signing.key
+          git add $files .SRCINFO
 
           # Staged rather than working-tree diff. In the empty repository of a
           # package the AUR does not carry yet, every file is untracked, and
