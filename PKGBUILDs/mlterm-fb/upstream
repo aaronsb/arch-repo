@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# mlterm splits its version across two hosts, and neither alone is right.
+#
+# The git tags stopped at rel-3_9_1 while releases kept being cut, so reading
+# tags reports a version four releases stale — github_latest asks for releases
+# first for exactly this reason. The tarball then comes from SourceForge, which
+# publishes no version list of its own, so the release name is what constructs
+# the download URL rather than anything SourceForge says.
+#
+# Nothing here is signed. Upstream publishes no signatures or checksums, so the
+# hash is whatever the tarball turns out to be, and the guarantee this package
+# offers is reproducibility rather than authenticity: the recorded hash is what
+# CI fetched at bump time, and makepkg refuses anything else afterwards. That is
+# a weaker claim than the Claude packages make, and it is why this one carries
+# .no-auto-merge.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+version=$(github_latest arakiken/mlterm)
+test -n "$version"
+
+current=$(current_pkgver)
+is_newer "$version" "$current" || exit 0
+
+sha256=$(sha256_of_url "https://downloads.sourceforge.net/mlterm/mlterm-${version}.tar.gz")
+test -n "$sha256"
+
+set_pkgver "$version"
+set_first_sum sha256 "$sha256"
+emit_bump "$current" "$version"

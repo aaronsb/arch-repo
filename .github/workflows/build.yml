@@ -68,10 +68,18 @@ jobs:
 
       # Errors a package knowingly accepts are listed as regexes in its own
       # .namcap-allow, with the reason in the PKGBUILD. Anything else fails.
+      #
+      # Debug packages are excluded rather than allowlisted. makepkg generates
+      # them, and every .build-id entry in one is a symlink to a path that lives
+      # in the main package, so namcap reports the whole set as dangling — sixty
+      # errors that say nothing about the PKGBUILD. Allowlisting them per package
+      # would mean each package that ships debug output carries the same block of
+      # regexes to silence a fact about how makepkg splits packages.
       - name: Lint
         working-directory: PKGBUILDs/${{ matrix.pkg }}
         run: |
-          namcap ./*.pkg.tar.zst | tee namcap.txt
+          pkgs=$(ls ./*.pkg.tar.zst | grep -v -- '-debug-')
+          namcap $pkgs | tee namcap.txt
           if [ -f .namcap-allow ]; then
             unexpected=$(grep ' E: ' namcap.txt | grep -vE -f .namcap-allow || true)
           else
@@ -83,10 +91,16 @@ jobs:
             exit 1
           fi
 
+      # Debug packages are built but not shipped. Arch keeps them in a separate
+      # repository precisely because they are large and almost nobody installs
+      # them; folding them into a single-repository pacman feed would put the
+      # symbols in front of everyone who adds it.
       - uses: actions/upload-artifact@v7
         with:
           name: pkg-${{ matrix.pkg }}
-          path: PKGBUILDs/${{ matrix.pkg }}/*.pkg.tar.zst
+          path: |
+            PKGBUILDs/${{ matrix.pkg }}/*.pkg.tar.zst
+            !PKGBUILDs/${{ matrix.pkg }}/*-debug-*.pkg.tar.zst
           retention-days: 7
 
   # One check name that does not change when packages come and go. Branch
@@ -187,13 +201,15 @@ jobs:
   # pushed only after the package has actually built and published here, so a
   # broken PKGBUILD cannot reach it.
   aur:
-    needs: publish
+    # discover is already upstream of publish; it is named again only to bring
+    # its output into scope here.
+    needs: [discover, publish]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     strategy:
       # One package failing to reach the AUR is no reason to withhold the other.
       fail-fast: false
       matrix:
-        pkg: [ya-claude, ya-claude-code]
+        pkg: ${{ fromJSON(needs.discover.outputs.pkgs) }}
     # Same reasoning against a shared ref: two runs cloning, committing and
     # pushing the same AUR master concurrently means the loser is rejected as
     # non-fast-forward, and the bump it carried is simply lost. Keyed by package
