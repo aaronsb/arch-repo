@@ -62,7 +62,7 @@ jobs:
 
       - name: Open PR
         if: steps.upstream.outputs.version != steps.upstream.outputs.current
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: bump/ya-claude-${{ steps.upstream.outputs.version }}
           title: "ya-claude ${{ steps.upstream.outputs.version }}"
@@ -129,7 +129,7 @@ jobs:
 
       - name: Open PR
         if: steps.upstream.outputs.version != steps.upstream.outputs.current
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: bump/ya-claude-code-${{ steps.upstream.outputs.version }}
           title: "ya-claude-code ${{ steps.upstream.outputs.version }}"
