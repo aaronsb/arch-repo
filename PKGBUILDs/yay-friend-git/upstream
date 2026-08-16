@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# A VCS package: the recipe comes from PKGBUILD-git on the repository's default
+# branch, and there is no version to watch. See sync_github_vcs for why that
+# leaves recipe content as the only thing worth detecting.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+sync_github_vcs aaronsb/yay-friend

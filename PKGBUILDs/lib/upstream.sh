@@ -239,6 +239,57 @@ sync_github_package() {
   emit_bump "$current" "$current_rel" "$version" "$rel"
 }
 
+# For a VCS package, whose recipe lives in its own source repository as
+# PKGBUILD-git and is published here under the -git name.
+#
+# There is no version to watch, so this is sync_github_package with the version
+# discovery removed. A -git package tracks a moving branch: pkgver() resolves a
+# real version at install time on the user's machine, and nothing this
+# repository can observe changes when upstream commits. What is left to detect
+# is the recipe changing, which is the whole of why a -git package is ever
+# republished.
+#
+# pkgver is left exactly as the source repository wrote it. Rewriting it would
+# mean cloning the repository here to compute a value makepkg already computes,
+# and the literal is only what .SRCINFO advertises until it does. It must still
+# name a real commit — a placeholder like 0.3.0.r0.g0000000 is the string yay
+# and paru compare against to decide whether an update exists.
+sync_github_vcs() {
+  local repo=$1 recipe=${2:-PKGBUILD-git}
+  local current current_rel rel work inst
+
+  current=$(current_pkgver)
+  current_rel=$(current_pkgrel)
+
+  work=$(mktemp -d)
+  curl -fsSL -o "$work/PKGBUILD" "https://raw.githubusercontent.com/${repo}/HEAD/${recipe}"
+  test -s "$work/PKGBUILD"
+
+  inst=$(install_file "$work/PKGBUILD")
+  if [ -n "$inst" ]; then
+    curl -fsSL -o "$work/$inst" "https://raw.githubusercontent.com/${repo}/HEAD/${inst}"
+    test -s "$work/$inst"
+  fi
+
+  # Rendered with the committed pkgrel so that pkgrel is not itself a
+  # difference, the same normalisation sync_github_package performs.
+  set_pkgrel "$current_rel" "$work/PKGBUILD"
+
+  if ! recipe_changed "$work" "$inst"; then
+    rm -rf "$work"
+    return 0
+  fi
+
+  rel=$((current_rel + 1))
+  set_pkgrel "$rel" "$work/PKGBUILD"
+
+  cp "$work/PKGBUILD" PKGBUILD
+  if [ -n "$inst" ]; then cp "$work/$inst" "$inst"; fi
+  rm -rf "$work"
+
+  emit_bump "$current" "$current_rel" "$(current_pkgver)" "$rel"
+}
+
 # Whether the recipe rendered into $1 says anything different from the one this
 # repository has committed. Only the files sync_github_package would go on to
 # copy into place are compared, since those are the whole of what it changes.
@@ -266,6 +317,13 @@ recipe_changed() {
 # only been packaged once.
 set_release() {
   sed -i "s/^pkgver=.*/pkgver=$1/; s/^pkgrel=.*/pkgrel=$2/" "${3:-PKGBUILD}"
+}
+
+# pkgrel on its own, for a VCS package. There pkgver is not ours to write:
+# pkgver() computes it at build time from the clone, and the literal is only
+# what .SRCINFO advertises until makepkg replaces it.
+set_pkgrel() {
+  sed -i "s/^pkgrel=.*/pkgrel=$1/" "${2:-PKGBUILD}"
 }
 
 # Replaces the first real checksum in an array. Every PKGBUILD here puts the

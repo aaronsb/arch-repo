@@ -1,0 +1,3 @@
+# yay is itself an AUR package, so makepkg -s cannot resolve it in a clean
+# container. It stays in depends(); see the build job for what happens instead.
+yay
