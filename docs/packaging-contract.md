@@ -102,6 +102,11 @@ already does:
   that way only works on versions that have already shipped. `git archive` to
   the filename the recipe's `source=` resolves to makes makepkg use the local
   tarball, and the dry run works before the release it is meant to precede.
+- **Write only the first checksum.** `updpkgsums` rewrites every entry, so a
+  recipe whose later sources carry `SKIP` — a git checkout, a local file — has
+  them replaced with computed hashes, and the dry run builds something
+  `arch-repo` will never publish. Slot one is the entry that moves with the
+  version, and it is the only one `arch-repo` writes.
 - **Fail on a namcap error.** `namcap` exits 0 whether or not it found any, so
   the output is what decides — the same rule `arch-repo`'s gate uses. Errors
   fail, warnings do not, a package may allow specific errors by listing regexes

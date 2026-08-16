@@ -87,6 +87,13 @@ if grep -qE '^(aur|publish-aur|publish):' Makefile; then
 else
   printf '  ok    %-32s %s\n' "nothing publishes" "no aur target"
 fi
+# updpkgsums rewrites every checksum entry, including the SKIP that a git or
+# local source carries. Only slot one moves with the version.
+if grep -vE '^[[:space:]]*#' Makefile | grep -q 'updpkgsums'; then
+  printf '  FAIL  %-32s %s\n' "rewrites every checksum" "updpkgsums"; fail=1
+else
+  printf '  ok    %-32s %s\n' "writes slot one only" "no updpkgsums"
+fi
 expect "NAME from PKGBUILD"    "example-app" "$(make -s -p 2>/dev/null | sed -n 's/^NAME := //p' | head -1)"
 expect "SRCNAME from _repo"    "example-app" "$(make -s -p 2>/dev/null | sed -n 's/^SRCNAME := //p' | head -1)"
 if make -s release >/dev/null 2>&1; then printf '  ok    %-32s %s\n' "make release runs" "-"
