@@ -155,6 +155,14 @@ jobs:
           test -s /tmp/aur-ssh/known_hosts   # empty means the scan silently failed
           export GIT_SSH_COMMAND="ssh -i /tmp/aur-ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/tmp/aur-ssh/known_hosts"
 
+          # The AUR answers an unregistered key with a bare "Permission denied
+          # (publickey)" that names neither the key it saw nor the account it
+          # looked under, which is indistinguishable from a malformed secret.
+          # The public half of a private key is not itself a secret, so printing
+          # its fingerprint costs nothing and turns that into a value to compare
+          # against the keys listed on aur.archlinux.org/account.
+          echo "offering $(ssh-keygen -lf /tmp/aur-ssh/key)"
+
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
           git config --global --add safe.directory '*'
