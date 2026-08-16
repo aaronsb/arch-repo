@@ -47,6 +47,14 @@ touches nothing else.
 | Package | Upstream | Provenance |
 |---------|----------|------------|
 | `ya-claude` | Anthropic's official Claude Desktop `.deb` | GPG-verified against Anthropic's signed apt index at build time |
+| `ya-claude-code` | Anthropic's official Claude Code CLI | GPG-verified against that release's signed manifest at build time |
+| `mlterm-fb` | `arakiken/mlterm`, framebuffer-only build | Hash pinned at bump time; upstream publishes no signatures |
+
+The provenance column is the difference that matters, and it is not uniform.
+The two Claude packages re-derive their payload's hash from a signature chain
+during the build, so a wrong value fails twice. `mlterm-fb` can only promise
+that what you install is what CI fetched — upstream signs nothing — which is
+why its bumps wait for a human rather than merging themselves.
 
 ### ya-claude
 

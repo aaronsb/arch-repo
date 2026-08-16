@@ -1,0 +1,56 @@
+# ADR Configuration
+# Used by: docs/scripts/adr
+
+project_name: arch-repo
+
+# Domain Number Series
+#
+# The bands follow the three questions this repository actually decides
+# between: what a package recipe must prove, how the machinery that carries it
+# works, and where the result is published. Trust gets its own band because the
+# signing keys and verification chains outlive any particular package or
+# workflow.
+domains:
+  packaging:
+    range: [100, 199]
+    name: Packaging
+    description: PKGBUILD conventions, upstream verification, per-package decisions
+    folder: packaging
+
+  pipeline:
+    range: [200, 299]
+    name: Pipeline
+    description: CI, watching, building, and the automation between them
+    folder: pipeline
+
+  distribution:
+    range: [300, 399]
+    name: Distribution
+    description: AUR, the pacman repository, and how packages reach a machine
+    folder: distribution
+
+  trust:
+    range: [400, 499]
+    name: Trust
+    description: Signing keys, credentials, and what a published artifact attests
+    folder: trust
+
+# Valid ADR statuses
+statuses:
+  - Draft
+  - Proposed
+  - Accepted
+  - Superseded
+  - Deprecated
+  - Rejected
+
+defaults:
+  deciders: [aaronsb, claude]
+  status: Draft
+
+# No pre-domain ADRs exist — this repository's first ADR is domain-numbered.
+legacy:
+  range: [1, 99]
+  label: "Legacy"
+
+viewer: cat {file}
