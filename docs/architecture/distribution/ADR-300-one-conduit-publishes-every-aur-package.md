@@ -51,10 +51,22 @@ serves. Its user population is one person, who is not currently using it.
 repository, for every package.
 
 Each source repository keeps its PKGBUILD at `./PKGBUILD` and tags releases
-`vX.Y.Z`. `arch-repo` watches for new tags, pulls the PKGBUILD at that tag,
-builds it, lints it, signs it, and publishes to both channels. Source
-repositories need no CI, no AUR credential, and no packaging automation of their
-own.
+`vX.Y.Z`. `arch-repo` watches for new tags, builds, lints, signs, and publishes
+to both channels. Source repositories need no CI, no AUR credential, and no
+packaging automation of their own.
+
+The recipe comes from the **default branch**, and only the version and checksum
+come from the tag. This looked like a shortcut when first written here and is
+not: a PKGBUILD cannot carry the checksum of the tarball its own tag produces,
+because the hash does not exist until the tag does. At `v0.5.3`, `playtimed`'s
+PKGBUILD still read `pkgver=0.5.2` with the 0.5.2 hash — and the `make aur`
+target every one of these repositories grew exists precisely to go back and fix
+that after tagging. Reading the branch for the recipe and the tag for the two
+moving values removes the circularity instead of automating a walk around it.
+
+It follows that a source repository's own `pkgver` and `sha256sums` stop
+mattering: `arch-repo` overwrites both, so their drifting stale — which is what
+they have all been doing — no longer reaches anyone.
 
 Consequently:
 
