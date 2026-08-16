@@ -73,6 +73,20 @@ jobs:
   publish:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Two bumps merging minutes apart is the normal case now that they merge
+    # themselves, and this job deletes the release before recreating it. Run
+    # twice at once, one run's delete lands after the other's create and the
+    # pacman repository disappears until something else pushes.
+    #
+    # Scoped to this job rather than the workflow so PR builds still run in
+    # parallel. cancel-in-progress is false because the destructive window is
+    # mid-job: killing a run between the delete and the upload is the outcome
+    # being avoided. GitHub keeps only one run pending per group, so a third
+    # merge discards the middle one — harmless here, since each run rebuilds
+    # and uploads every package rather than appending to what is there.
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -137,6 +151,13 @@ jobs:
   aur:
     needs: publish
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Same reasoning against a shared ref: two runs cloning, committing and
+    # pushing the same AUR master concurrently means the loser is rejected as
+    # non-fast-forward, and the bump it carried is simply lost. Its own group,
+    # because it contends with the AUR rather than with the release.
+    concurrency:
+      group: publish-aur
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
