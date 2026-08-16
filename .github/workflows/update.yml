@@ -159,6 +159,42 @@ jobs:
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           sed -i "0,/^sha256sums=('.*'/s//sha256sums=('${{ steps.upstream.outputs.sha256 }}'/" PKGBUILD
 
+      # Prose for whoever reads the PR, and the only input in this job that is
+      # not signed. Nothing is derived from it — the version and checksum are
+      # already fixed by the verified manifest above — so a changelog that is
+      # missing, unpublished, or wrong costs the PR its notes and nothing else.
+      # Failures are swallowed for the same reason: a bump must not be blocked
+      # by an unauthenticated source.
+      - name: Collect the changelog entries this bump crosses
+        id: notes
+        if: steps.upstream.outputs.version != steps.upstream.outputs.current
+        env:
+          NEW: ${{ steps.upstream.outputs.version }}
+          CUR: ${{ steps.upstream.outputs.current }}
+        run: |
+          CL=https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
+          curl -fsSL "$CL" -o /tmp/CHANGELOG.md || exit 0
+
+          # The file is newest-first, so everything between the new heading and
+          # the current one is exactly the releases being crossed — including
+          # any intermediate version that never got its own section. head caps
+          # the damage when the current version is old enough to have fallen off
+          # the file entirely, which would otherwise paste its whole history.
+          awk -v new="## $NEW" -v cur="## $CUR" \
+              '$0==new{p=1} $0==cur{p=0} p' /tmp/CHANGELOG.md \
+            | head -300 > /tmp/notes.md
+
+          test -s /tmp/notes.md || exit 0
+
+          D="notes-$(openssl rand -hex 8)"
+          {
+            echo "notes<<$D"
+            echo "## Upstream changelog"
+            echo
+            grep -v "^$D\$" /tmp/notes.md
+            echo "$D"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Open PR
         id: pr
         if: steps.upstream.outputs.version != steps.upstream.outputs.current
@@ -177,6 +213,12 @@ jobs:
             and the manifest's own version field was checked to match — a validly
             signed manifest for a different release is rejected. The build re-runs
             all of it.
+
+            The changelog below is quoted from upstream's repository, which is
+            unsigned. It is context for the reader; nothing in this bump derives
+            from it.
+
+            ${{ steps.notes.outputs.notes }}
 
       - name: Queue the merge
         if: steps.pr.outputs.pull-request-number
