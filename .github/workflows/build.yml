@@ -206,17 +206,24 @@ jobs:
     needs: [discover, publish]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     strategy:
-      # One package failing to reach the AUR is no reason to withhold the other.
+      # One package failing to reach the AUR is no reason to withhold the others.
       fail-fast: false
+      # The AUR is one shared community server, and this job opens an SSH
+      # connection to it. Fanning every package at it at once got a connection
+      # closed on the fourth; one at a time costs about forty seconds per
+      # package and asks nothing of a volunteer-run service.
+      max-parallel: 1
       matrix:
         pkg: ${{ fromJSON(needs.discover.outputs.pkgs) }}
-    # Same reasoning against a shared ref: two runs cloning, committing and
-    # pushing the same AUR master concurrently means the loser is rejected as
-    # non-fast-forward, and the bump it carried is simply lost. Keyed by package
-    # because the contention is over one AUR repository, not the AUR at large —
-    # the two packages have no reason to queue behind each other.
+    # Two runs cloning, committing and pushing the same AUR master concurrently
+    # means the loser is rejected as non-fast-forward and the bump it carried is
+    # lost with the run. This was briefly keyed per package, on the reasoning
+    # that contention is over one AUR repository rather than the AUR at large.
+    # That is true of the git refs and false of the server in front of them: it
+    # started closing connections once four packages pushed at once. One group
+    # for the whole job, so at most one connection to the AUR exists at a time.
     concurrency:
-      group: publish-aur-${{ matrix.pkg }}
+      group: publish-aur
       cancel-in-progress: false
     runs-on: ubuntu-latest
     container:
