@@ -82,6 +82,8 @@ Three targets, named the same way in every repository — see
 |---|---|---|
 | `make check` | nothing; verifies | the repository's own CI, before a release |
 | `make package` | the package, built from `./PKGBUILD` in a clean chroot, then namcap'd | a human, before a release |
+| `make version` | nothing; reports | you, to see what the next release would be |
+| `make help` | nothing; lists the above | you |
 | `make release` | the artifacts a release must carry; frequently empty | the recipe's `source=` |
 
 `make check` is where the repository's internal version consistency is asserted:
@@ -89,8 +91,22 @@ that the tag about to be cut agrees with `Cargo.toml`, `package.json`, or the go
 module. The committed `pkgver` is not one of the values compared — `arch-repo`
 owns it.
 
-`make package` is the pre-tag dry run of what `arch-repo` will do. A recipe that
-would fail in a bump pull request fails on the desk instead.
+`make package` is the pre-release dry run of what `arch-repo` will do. A recipe
+that would fail in a bump pull request fails on the desk instead.
+
+Two things it has to get right to be worth running, both of which the example
+already does:
+
+- **Build from `HEAD`, not from the published archive.** `updpkgsums` pointed at
+  `archive/v$pkgver.tar.gz` needs the tag to already exist, so a target written
+  that way only works on versions that have already shipped. `git archive` to
+  the filename the recipe's `source=` resolves to makes makepkg use the local
+  tarball, and the dry run works before the release it is meant to precede.
+- **Fail on a namcap error.** `namcap` exits 0 whether or not it found any, so
+  the output is what decides — the same rule `arch-repo`'s gate uses. Errors
+  fail, warnings do not, a package may allow specific errors by listing regexes
+  in `.namcap-allow`, and debug packages are excluded because every `.build-id`
+  entry in one is a symlink into the main package.
 
 There is no `make aur`, no `make publish-aur`, no `publish-aur.sh`.
 
