@@ -1,0 +1,19 @@
+# Refreshing the hicolor cache is the whole job. A package that ships an icon
+# into /usr/share/icons/hicolor needs hicolor-icon-theme in depends() as well —
+# namcap reports the missing dependency, not the missing hook.
+#
+# Do not add desktop-file-utils or shared-mime-info to depends() to silence a
+# related warning. namcap complains in the other direction when they are listed
+# and unused.
+
+post_install() {
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    post_install
+}

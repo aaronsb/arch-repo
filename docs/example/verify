@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Reads the worked example with the same helpers that read a real source
+# repository, and asserts what they extract.
+#
+# An example that is only prose rots silently: the helpers change, the sample
+# stops being something they can parse, and nothing says so until a repository
+# written against it fails to onboard. This runs in CI, so the example cannot
+# describe a layout arch-repo no longer accepts.
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+. ../../PKGBUILDs/lib/upstream.sh
+
+fail=0
+expect() {
+  if [ "$2" = "$3" ]; then
+    printf '  ok    %-32s %s\n' "$1" "${3:-(empty)}"
+  else
+    printf '  FAIL  %-32s expected %-22s got %s\n' "$1" "${2:-(empty)}" "${3:-(empty)}"
+    fail=1
+  fi
+}
+
+ZEROS=0000000000000000000000000000000000000000000000000000000000000000
+
+echo "PKGBUILD — the versioned shape"
+expect "pkgver"        "0.0.0"              "$(current_pkgver PKGBUILD)"
+expect "pkgrel"        "1"                  "$(current_pkgrel PKGBUILD)"
+expect "first sha256"  "$ZEROS"             "$(first_sum sha256 PKGBUILD)"
+expect "install="      "example-app.install" "$(install_file PKGBUILD)"
+
+echo "PKGBUILD-git — the VCS shape"
+expect "pkgver"        "0.0.0"              "$(current_pkgver PKGBUILD-git)"
+expect "pkgrel"        "1"                  "$(current_pkgrel PKGBUILD-git)"
+# SKIP is not hex, so a VCS recipe has no slot to write a hash into and
+# sync_github_package must not go looking for a tarball to fill one.
+expect "no sha256 slot" ""                  "$(first_sum sha256 PKGBUILD-git)"
+expect "install="      "example-app.install" "$(install_file PKGBUILD-git)"
+
+echo "every file the recipes name is present"
+for f in $(install_file PKGBUILD) $(install_file PKGBUILD-git); do
+  if [ -f "$f" ]; then printf '  ok    %-32s %s\n' "exists" "$f"
+  else printf '  FAIL  %-32s %s\n' "missing" "$f"; fail=1; fi
+done
+
+echo "the rewriters land where they are aimed"
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+cp PKGBUILD "$work/PKGBUILD"
+set_release 1.2.3 4 "$work/PKGBUILD"
+set_first_sum sha256 "$(printf 'a%.0s' {1..64})" "$work/PKGBUILD"
+expect "pkgver after set_release" "1.2.3"  "$(current_pkgver "$work/PKGBUILD")"
+expect "pkgrel after set_release" "4"      "$(current_pkgrel "$work/PKGBUILD")"
+expect "sum after set_first_sum"  "$(printf 'a%.0s' {1..64})" "$(first_sum sha256 "$work/PKGBUILD")"
+
+# makepkg is the authority on whether a recipe parses at all. --printsrcinfo
+# reads the metadata without running pkgver() or downloading anything.
+if command -v makepkg >/dev/null 2>&1; then
+  echo "makepkg parses both recipes"
+  for f in PKGBUILD PKGBUILD-git; do
+    # Named PKGBUILD, and beside the files it declares. makepkg resolves
+    # install= against the working directory, so a recipe checked on its own
+    # fails for a reason that has nothing to do with the recipe.
+    parse=$(mktemp -d)
+    cp "$f" "$parse/PKGBUILD"
+    cp ./*.install "$parse/" 2>/dev/null || true
+    if ( cd "$parse" && makepkg --printsrcinfo >/dev/null 2>&1 ); then
+      printf '  ok    %-32s %s\n' "printsrcinfo" "$f"
+    else
+      printf '  FAIL  %-32s %s\n' "printsrcinfo" "$f"; fail=1
+      ( cd "$parse" && makepkg --printsrcinfo 2>&1 | sed 's/^/        /' | head -5 )
+    fi
+    rm -rf "$parse"
+  done
+else
+  echo "makepkg not installed; skipping the parse check"
+fi
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "the example is still something arch-repo can read"
+else
+  echo "::error::the worked example no longer matches what the helpers extract"
+fi
+exit "$fail"

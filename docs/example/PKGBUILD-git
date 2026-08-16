@@ -1,0 +1,52 @@
+# Maintainer: Aaron Bockelie <aaronsb@gmail.com>
+#
+# The VCS companion, published alongside example-app under its own AUR name. A
+# repository may carry this recipe, the versioned one, or both.
+
+pkgname=example-app-git
+_pkgname=example-app
+
+# There is no version to watch. arch-repo publishes this recipe when the recipe
+# changes and at no other time — pkgver() is what resolves a real version, and
+# it runs at build time on the machine installing the package.
+pkgver=0.0.0
+pkgrel=1
+
+pkgdesc="One line, no trailing full stop, and it does not repeat the package name"
+arch=('x86_64')
+url="https://github.com/aaronsb/${_pkgname}"
+license=('GPL-2.0-or-later')
+depends=('gcc-libs')
+makedepends=('go' 'git')
+provides=("${_pkgname}")
+conflicts=("${_pkgname}")
+install="${_pkgname}.install"
+
+source=("${_pkgname}::git+${url}.git")
+sha256sums=('SKIP')
+
+# Derived from the tag, never hardcoded. Writing the base version into the
+# printf — printf "0.3.0.r%s.g%s" — leaves the package claiming 0.3.0 forever
+# after v0.4.0 is tagged, and nothing reports that as an error.
+#
+# Regenerate .SRCINFO from an evaluated pkgver(), not from the literal above. A
+# .SRCINFO carrying a placeholder like 0.3.0.r0.g0000000 names a commit that
+# does not exist, and that string is what yay and paru compare against to decide
+# whether an update is available.
+pkgver() {
+    cd "${_pkgname}"
+    git describe --long --tags --abbrev=7 | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+}
+
+build() {
+    cd "${_pkgname}"
+    export CGO_ENABLED=0
+    go build -trimpath -ldflags "-s -w" -o "${_pkgname}" ./cmd/example
+}
+
+package() {
+    cd "${_pkgname}"
+    install -Dm755 "${_pkgname}"    "${pkgdir}/usr/bin/${_pkgname}"
+    install -Dm644 README.md        "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    install -Dm644 assets/icon.svg  "${pkgdir}/usr/share/icons/hicolor/scalable/apps/${_pkgname}.svg"
+}

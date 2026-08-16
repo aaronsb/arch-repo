@@ -1,0 +1,60 @@
+# Maintainer: Aaron Bockelie <aaronsb@gmail.com>
+#
+# A conforming versioned recipe. The rules are in docs/packaging-contract.md and
+# the reasoning is in ADR-100; this file is the worked example, and CI reads it
+# with the same helpers that read a real repository.
+
+pkgname=example-app
+_repo=example-app
+
+# Placeholders, and correct as placeholders. arch-repo overwrites pkgver from
+# the newest published release, sha256sums from that release's artifact, and
+# pkgrel with its own count of how many times it has packaged that release. A
+# PKGBUILD cannot carry the checksum of the tarball its own tag produces, so
+# there is no value here that could be right.
+pkgver=0.0.0
+pkgrel=1
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+pkgdesc="One line, no trailing full stop, and it does not repeat the package name"
+arch=('x86_64')
+url="https://github.com/aaronsb/${_repo}"
+
+# SPDX identifiers. A licence whose text ships in licenses/ needs no file in the
+# package — /usr/share/licenses/spdx/GPL-2.0-or-later.txt already exists, and
+# namcap says so. BSD-3-Clause and MIT do not ship there, so a package under
+# either has to install its own LICENSE and namcap fails if it does not.
+license=('GPL-2.0-or-later')
+
+depends=('gcc-libs')
+makedepends=('go')
+
+# The field is shell, not a filename. arch-repo expands ${pkgname} before
+# fetching the file, because asking raw.githubusercontent.com for a path with a
+# dollar sign in it returns a 404 that reads like a missing file.
+install="${pkgname}.install"
+
+# Named so the extracted directory is predictable. GitHub generates this tarball
+# for every release; nothing has to be uploaded for it to exist.
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
+
+build() {
+    cd "${srcdir}/${_repo}-${pkgver}"
+    export CGO_ENABLED=0
+    go build -trimpath -ldflags "-s -w -X main.version=${pkgver}" -o "${pkgname}" ./cmd/example
+}
+
+check() {
+    cd "${srcdir}/${_repo}-${pkgver}"
+    go test ./...
+}
+
+package() {
+    cd "${srcdir}/${_repo}-${pkgver}"
+    install -Dm755 "${pkgname}"     "${pkgdir}/usr/bin/${pkgname}"
+    install -Dm644 README.md        "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+
+    # An icon means a hicolor cache to refresh, which is what the .install hook
+    # does and why hicolor-icon-theme is a dependency of packages that ship one.
+    install -Dm644 assets/icon.svg  "${pkgdir}/usr/share/icons/hicolor/scalable/apps/${pkgname}.svg"
+}

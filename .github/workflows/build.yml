@@ -3,7 +3,7 @@ name: build and publish
 on:
   push:
     branches: [main]
-    paths: ['PKGBUILDs/**', '.github/workflows/build.yml']
+    paths: ['PKGBUILDs/**', 'docs/example/**', '.github/workflows/build.yml']
   # Deliberately unfiltered, unlike the push trigger above. The gate below is
   # main's required status check, and a path filter skips the whole workflow
   # rather than reporting a passing context — so a PR that touches no PKGBUILD
@@ -103,24 +103,42 @@ jobs:
             !PKGBUILDs/${{ matrix.pkg }}/*-debug-*.pkg.tar.zst
           retention-days: 7
 
+  # The worked example under docs/example is what a source repository is told to
+  # copy, and it is read by the same helpers that read a real one. Checking it
+  # here is what stops the documentation and the code drifting apart: change a
+  # helper so the documented layout no longer parses, and this fails.
+  contract:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v5
+      # makepkg will not run as root, and --printsrcinfo is still makepkg.
+      - run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory '*'
+          sudo -u builder ./docs/example/verify
+
   # One check name that does not change when packages come and go. Branch
   # protection names its required contexts as strings, so requiring the matrix
   # legs directly meant every added package silently arrived ungated: its job
   # was not in the required list, and a rule listing a departed package's job
   # can never be satisfied at all.
   gate:
-    needs: [discover, build]
+    needs: [discover, build, contract]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Require every package to have built
         run: |
-          echo "discover=${{ needs.discover.result }} build=${{ needs.build.result }}"
+          echo "discover=${{ needs.discover.result }} build=${{ needs.build.result }} contract=${{ needs.contract.result }}"
           # A matrix result is the aggregate of its legs, so one failed package
           # fails this. Cancelled and skipped are failures here too — neither
           # means the packages built.
           test "${{ needs.discover.result }}" = success
           test "${{ needs.build.result }}"    = success
+          test "${{ needs.contract.result }}" = success
 
   publish:
     needs: gate

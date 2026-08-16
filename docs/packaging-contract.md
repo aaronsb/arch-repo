@@ -3,9 +3,11 @@
 What a source repository provides so that `arch-repo` can build, lint, sign and
 publish it to the AUR and the `[aaronsb]` pacman repository. The decision behind
 this is [ADR-100](architecture/packaging/ADR-100-one-packaging-contract-for-every-repository-arch-repo-publishes.md);
-this page is the contract itself.
+this page is the contract itself, and [`example/`](example/) is a complete
+repository laid out to it — copy from there rather than from the fragments
+below, since CI reads it with the same helpers that read a real repository.
 
-Read it once when starting a project. Nothing here is per-package configuration
+Read this once when starting a project. Nothing here is per-package configuration
 — `arch-repo` looks in the same places in every repository.
 
 ## What the repository provides
@@ -33,12 +35,8 @@ excludes drafts and pre-releases from `releases/latest`; a tag list has no such
 notion, and sorting one picks `v1.2.0-rc1` over `v1.2.0`.
 
 `source=` names an artifact the release carries. For most projects that is
-GitHub's generated source tarball and cutting the release is the whole job:
-
-```sh
-source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
-```
+GitHub's generated source tarball and cutting the release is the whole job —
+see [`example/PKGBUILD`](example/PKGBUILD).
 
 Where the package ships something built instead, `make release` produces it, the
 GitHub release carries it as an asset, and `source=` points at the asset URL.
@@ -46,20 +44,13 @@ GitHub release carries it as an asset, and `source=` points at the asset URL.
 ### `my-app-git` — VCS
 
 There is no version to watch. The recipe is published when the recipe changes
-and at no other time.
+and at no other time. See [`example/PKGBUILD-git`](example/PKGBUILD-git).
 
-```sh
-source=("$_pkgname::git+$url.git")
-sha256sums=('SKIP')
-
-pkgver() {
-    cd "$_pkgname"
-    git describe --long --tags --abbrev=7 | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
-}
-```
-
-Derive the base version from `git describe`. Hardcoding it — `printf "0.3.0.r%s.g%s"`
-— leaves the package claiming `0.3.0` forever after `v0.4.0` is tagged.
+Derive the base version from `git describe`. Hardcoding it —
+`printf "0.3.0.r%s.g%s"` — leaves the package claiming `0.3.0` forever after
+`v0.4.0` is tagged, and regenerate `.SRCINFO` from an evaluated `pkgver()`: a
+placeholder like `0.3.0.r0.g0000000` names a commit that does not exist, and
+that string is what `yay` and `paru` compare against.
 
 The obligation a VCS package places on the repository is that the default branch
 builds at HEAD, always.
@@ -84,7 +75,8 @@ placeholder values are correct rather than sloppy.
 
 ## The make pattern
 
-Three targets, named the same way in every repository:
+Three targets, named the same way in every repository — see
+[`example/Makefile`](example/Makefile):
 
 | Target | Produces | Read by |
 |---|---|---|
