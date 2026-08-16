@@ -4,8 +4,12 @@ on:
   push:
     branches: [main]
     paths: ['PKGBUILDs/**', '.github/workflows/build.yml']
+  # Deliberately unfiltered, unlike the push trigger above. These two build jobs
+  # are main's required status checks, and a path filter skips the whole
+  # workflow rather than reporting a passing context — so a PR that touches no
+  # PKGBUILD would produce no checks and could never satisfy the branch rule.
+  # A minute of redundant build on doc-only PRs buys a gate that always reports.
   pull_request:
-    paths: ['PKGBUILDs/**']
   workflow_dispatch:
 
 env:
