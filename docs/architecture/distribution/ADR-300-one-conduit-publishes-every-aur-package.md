@@ -5,6 +5,7 @@ deciders:
   - aaronsb
   - claude
 related:
+  - ADR-100
   - ADR-200
 ---
 
@@ -50,21 +51,29 @@ serves. Its user population is one person, who is not currently using it.
 `arch-repo` is the only path to the AUR and to the `[aaronsb]` pacman
 repository, for every package.
 
-Each source repository keeps its PKGBUILD at `./PKGBUILD` and tags releases
-`vX.Y.Z`. `arch-repo` watches for new tags, pulls the PKGBUILD at that tag,
-builds it, lints it, signs it, and publishes to both channels. Source
-repositories need no CI, no AUR credential, and no packaging automation of their
-own.
+What a source repository provides in exchange is [[ADR-100]]'s contract: a
+recipe at a fixed location on the default branch, and nothing that publishes.
+`arch-repo` watches, builds, lints, signs, and pushes to both channels. Source
+repositories need no CI, no AUR credential, and no packaging automation of
+their own.
 
-Consequently:
+The recipe comes from the **default branch**, and only the version and checksum
+come from the tag. This looked like a shortcut when first written here and is
+not: a PKGBUILD cannot carry the checksum of the tarball its own tag produces,
+because the hash does not exist until the tag does. At `v0.5.3`, `playtimed`'s
+PKGBUILD still read `pkgver=0.5.2` with the 0.5.2 hash — and the `make aur`
+target every one of these repositories grew exists precisely to go back and fix
+that after tagging. Reading the branch for the recipe and the tag for the two
+moving values removes the circularity instead of automating a walk around it.
 
-- The hand-rolled AUR targets in `clicue`, `mmaid-go`, `markdown-mixed-media`
-  and `bosectl-qt` are removed, along with the scripts behind them. Two writers
-  to one AUR ref is how a PKGBUILD and its `.SRCINFO` drift apart.
-- `clicue`'s PKGBUILD moves to the repository root, and its `[clicue]` pacman
-  repository folds into `[aaronsb]`. Its ADR-401 is superseded by this one.
-- `yay-friend` gains a real PKGBUILD at `v0.6.0`, alongside the existing
-  `yay-friend-git`.
+It follows that a source repository's own `pkgver` and `sha256sums` stop
+mattering, and [[ADR-100]] extends that to `pkgrel` and `.SRCINFO`: `arch-repo`
+overwrites all four, so their drifting stale — which is what they have all been
+doing — no longer reaches anyone.
+
+Every repository that publishes to the AUR itself gives that up. Two writers to
+one AUR ref is how a PKGBUILD and its `.SRCINFO` drift apart, and the conduit is
+worth nothing if a second path stays open beside it.
 
 Packaging stays next to source rather than moving into `arch-repo`, so a change
 that breaks the build travels in the same commit as the PKGBUILD that must
@@ -79,7 +88,9 @@ adapt to it.
   the substantive change, not the automation.
 - One AUR credential, in one repository, rather than eight.
 - One pacman repository carrying everything, so a machine adds one stanza.
-- A release is a tag. Nothing else is a release action.
+- Releasing is cutting a release. There is no second action afterwards, and a
+  packaging fix needs no release at all — [[ADR-100]] and [[ADR-200]] make it a
+  `pkgrel` bump.
 
 ### Negative
 
