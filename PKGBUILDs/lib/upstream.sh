@@ -68,6 +68,54 @@ md5_of_url() {
   rm -f "$tmp"
 }
 
+# ------------------------------------------------- packages we publish ourselves --
+
+# For a package whose recipe lives in its own source repository.
+#
+# The recipe is taken from the default branch, not from the tag, and this is not
+# a shortcut. A PKGBUILD cannot carry the checksum of the tarball its own tag
+# produces — the hash only exists once the tag does — so at v0.5.3 playtimed's
+# PKGBUILD still read pkgver=0.5.2 with the 0.5.2 hash, and every one of these
+# repositories had a Makefile target to go back and fix that afterwards. Taking
+# the recipe from the branch and both moving values from the tag removes the
+# circularity rather than automating a walk around it.
+#
+# It also means a source repository's own pkgver and sha256sums stop mattering:
+# they are overwritten here, so their drifting stale — which is what they have
+# all been doing — no longer reaches anyone.
+#
+# Detection is on the version only. A recipe edited without a new tag rides
+# along with the next bump.
+sync_github_package() {
+  local repo=$1 version current sha tarball
+  version=$(github_latest "$repo")
+  test -n "$version"
+
+  current=$(current_pkgver)
+  is_newer "$version" "$current" || return 0
+
+  curl -fsSL -o PKGBUILD "https://raw.githubusercontent.com/${repo}/HEAD/PKGBUILD"
+  test -s PKGBUILD
+
+  # A PKGBUILD's install= names a file that lives beside it, not a URL, so it
+  # has to be fetched too or the recipe references something that was never
+  # copied — and both the AUR push and a local makepkg would fail on it.
+  local inst
+  inst=$(awk -F= '/^install=/{gsub(/["'"'"']/,"",$2); print $2; exit}' PKGBUILD)
+  if [ -n "$inst" ]; then
+    curl -fsSL -o "$inst" "https://raw.githubusercontent.com/${repo}/HEAD/${inst}"
+    test -s "$inst"
+  fi
+
+  tarball="https://github.com/${repo}/archive/v${version}.tar.gz"
+  sha=$(sha256_of_url "$tarball")
+  test -n "$sha"
+
+  set_pkgver "$version"
+  set_first_sum sha256 "$sha"
+  emit_bump "$current" "$version"
+}
+
 # ------------------------------------------------------------------ rewrite --
 
 set_pkgver() {
