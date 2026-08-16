@@ -43,7 +43,6 @@ version: ## Report the version this repository would release
 
 package: version ## Build ./PKGBUILD in a clean chroot and namcap it
 	@command -v extra-x86_64-build >/dev/null || { echo "needs devtools" >&2; exit 1; }
-	@command -v updpkgsums >/dev/null        || { echo "needs pacman-contrib" >&2; exit 1; }
 	@command -v namcap >/dev/null            || { echo "needs namcap" >&2; exit 1; }
 	rm -rf build && mkdir -p build
 	# The tarball the release would carry, built from HEAD and named exactly
@@ -54,7 +53,16 @@ package: version ## Build ./PKGBUILD in a clean chroot and namcap it
 	git archive --format=tar.gz --prefix=$(SRCNAME)-$(VERSION)/ \
 	    -o build/$(NAME)-$(VERSION).tar.gz HEAD
 	cp PKGBUILD $(wildcard *.install) build/
-	cd build && sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' PKGBUILD && updpkgsums
+	# Slot one only — the entry that moves with the version, and the one
+	# arch-repo writes. updpkgsums rewrites every entry, so a recipe whose
+	# later sources carry SKIP (a git checkout, a local file) would have them
+	# replaced with computed hashes and the dry run would build something
+	# arch-repo will never publish. The sums array is the only quoted 64-hex
+	# in a recipe, and SKIP is never matched: it is not hex.
+	cd build \
+	  && sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' PKGBUILD \
+	  && sum=$$(sha256sum $(NAME)-$(VERSION).tar.gz | cut -d' ' -f1) \
+	  && sed -i "0,/'[0-9a-f]\{64\}'/s//'$$sum'/" PKGBUILD
 	cd build && extra-x86_64-build
 	# namcap exits 0 whether or not it found errors, so its output is what
 	# decides. Same rule arch-repo's gate uses: errors fail, warnings do not,
