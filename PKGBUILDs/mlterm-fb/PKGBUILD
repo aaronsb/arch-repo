@@ -62,8 +62,11 @@ package() {
   # libtool archives are not needed at runtime
   find "$pkgdir" -name '*.la' -delete
 
-  # license
-  install -Dm644 doc/en/COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING" 2>/dev/null \
-    || install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE" 2>/dev/null \
-    || true
+  # Upstream spells it LICENCE, at the root. This used to try doc/en/COPYING,
+  # fall back to LICENSE, and end in `|| true` — three guesses, none of them the
+  # actual filename, and a swallowed failure that turned the whole step into a
+  # no-op. The package shipped with no licence file for as long as that stood.
+  # Named exactly and allowed to fail: if upstream renames it, the build says so
+  # rather than quietly dropping it again.
+  install -Dm644 LICENCE "$pkgdir/usr/share/licenses/$pkgname/LICENCE"
 }
