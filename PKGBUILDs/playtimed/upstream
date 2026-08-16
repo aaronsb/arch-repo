@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# playtimed is ours: the recipe comes from its repository, the version and hash
+# from its newest tag. See sync_github_package for why those come from different
+# places.
+. "$(dirname "$0")/../lib/upstream.sh"
+
+sync_github_package aaronsb/playtimed

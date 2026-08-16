@@ -10,6 +10,11 @@ PKGBUILDs/*/*
 !PKGBUILDs/*/notes
 !PKGBUILDs/*/.no-auto-merge
 
+# Files a PKGBUILD references beside itself rather than downloading: pacman
+# install hooks, and licence texts that upstream ships outside the tarball.
+!PKGBUILDs/*/*.install
+!PKGBUILDs/*/*.txt
+
 # Shared helpers, not a package. The rule above is written for package
 # directories and would otherwise swallow this one whole.
 !PKGBUILDs/lib/*
