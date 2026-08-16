@@ -12,7 +12,7 @@ pkgrel=1
 pkgdesc='Framebuffer-only mlterm: truecolor + sixel + multilingual UTF-8 terminal on /dev/fb0 (no X/GTK)'
 arch=('x86_64')
 url='https://github.com/arakiken/mlterm'
-license=('BSD')
+license=('BSD-3-Clause')
 depends=('freetype2' 'fontconfig' 'fribidi' 'gpm')
 makedepends=('intltool' 'cairo' 'libssh2')
 optdepends=('libssh2: built-in SSH support (libptyssh plugin)')
@@ -32,6 +32,16 @@ build() {
   export CFLAGS+=" -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration"
 
   # Only the framebuffer frontend — no xlib/gtk/wayland frontends are built.
+  #
+  # --disable-image drops mlimgloader, which configure adds by default. With
+  # --with-imagelib left at its default of no, that helper has no gdk-pixbuf
+  # backend and loads images through libX11 instead — so on the bare console
+  # this package targets, it links a library that need not be installed and
+  # could not display anything if it were. namcap sees only the undeclared
+  # libx11; the deeper point is that the binary cannot work here at all.
+  #
+  # Sixel is unaffected: mlterm decodes it in the terminal itself rather than
+  # through the image loader.
   ./configure \
     --prefix=/usr \
     --libexecdir=/usr/lib \
@@ -40,6 +50,7 @@ build() {
     --with-type-engines=cairo \
     --enable-fribidi \
     --enable-optimize-redrawing \
+    --disable-image \
     --disable-static
   make
 }
