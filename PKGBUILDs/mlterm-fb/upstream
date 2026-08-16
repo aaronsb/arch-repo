@@ -19,11 +19,12 @@ version=$(github_latest arakiken/mlterm)
 test -n "$version"
 
 current=$(current_pkgver)
+current_rel=$(current_pkgrel)
 is_newer "$version" "$current" || exit 0
 
 sha256=$(sha256_of_url "https://downloads.sourceforge.net/mlterm/mlterm-${version}.tar.gz")
 test -n "$sha256"
 
-set_pkgver "$version"
+set_release "$version" 1
 set_first_sum sha256 "$sha256"
-emit_bump "$current" "$version"
+emit_bump "$current" "$current_rel" "$version" 1
