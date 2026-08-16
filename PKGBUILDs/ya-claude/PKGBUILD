@@ -99,12 +99,16 @@ prepare() {
     return 1
   fi
 
+  # Stanza state resets at each Package: head, so a stanza that carries no
+  # SHA256 cannot donate its version to the next one. Matching on its own rule
+  # rather than inside END keeps the match to a single line: awk's exit runs
+  # END on the way out, so printing in both places emits the hash twice.
   local signed
   signed=$(awk -v v="$pkgver" '
-      /^$/          { if (ver==v && sum!="") { print sum; exit } ver=""; sum=""; next }
-      $1=="Version:"{ ver=$2 }
-      $1=="SHA256:" { sum=$2 }
-      END           { if (ver==v && sum!="") print sum }' Packages)
+      $1=="Package:"    { ver=""; sum="" }
+      $1=="Version:"    { ver=$2 }
+      $1=="SHA256:"     { sum=$2 }
+      ver==v && sum!="" { print sum; exit }' Packages)
   if [[ $signed != "${sha256sums[0]}" ]]; then
     echo "==> ${pkgver} hash in the signed index (${signed:-none}) != pinned ${sha256sums[0]}" >&2
     return 1
