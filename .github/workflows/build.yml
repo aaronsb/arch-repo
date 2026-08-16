@@ -264,8 +264,12 @@ jobs:
           # so the first package without that key failed on a missing file, and
           # any package with an .install or a bundled licence would have shipped
           # to the AUR without it.
-          files=$(git -C "$GITHUB_WORKSPACE" ls-files "PKGBUILDs/${PKG}" \
-                  | xargs -n1 basename \
+          # Read from the directory rather than from git. This job checks out
+          # clean and builds nothing, so the directory contents are exactly the
+          # tracked set — and `git ls-files` does not work here anyway: the
+          # workspace carries no usable git metadata inside this container, which
+          # is the same instability the note above records about HOME.
+          files=$(ls -A "PKGBUILDs/${PKG}" \
                   | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow')
           test -n "$files"
           for f in $files; do cp "PKGBUILDs/${PKG}/$f" /tmp/aur/; done
