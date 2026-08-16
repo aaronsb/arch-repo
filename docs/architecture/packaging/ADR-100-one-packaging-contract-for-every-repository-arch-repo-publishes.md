@@ -46,17 +46,15 @@ to be unpackageable:
 | `bosectl-qt-git` | Published as `0.3.0.r0.g0000000-1`. `pkgver()` is correct and would emit a real `r<count>.g<hash>`, but the committed literal and the published `.SRCINFO` both carry the template placeholder. The base version `0.3.0` is also hardcoded inside `pkgver()`, so it will keep saying `0.3.0.rN` after `v0.4.0` is tagged. |
 | `brother-hl-l3295cdw` | Not this maintainer's software. There is no source repository to hold a recipe. |
 
-Only the last of those is a genuine difference in kind. The first three are a
-repository having guessed differently, in the absence of anything to guess
-against.
+Only `brother-hl-l3295cdw` differs in kind. The other three each chose a layout
+with nothing written down to choose against.
 
-`clicue` is the clearest case, because it did not guess badly — it reasoned. Its
-PKGBUILD carries `sha256sums=SKIP` under a comment explaining that a committed
-sum would be circular, since the file ships inside the tarball it would
-checksum. That is the same circularity [[ADR-300]] identifies, diagnosed
-independently and correctly, and answered by keeping the sum out of version
-control instead of by taking the recipe from the branch and the hash from the
-tag. Two good answers to one question is what an unwritten contract produces.
+`clicue` chose deliberately. Its PKGBUILD carries `sha256sums=SKIP` under a
+comment explaining that a committed sum would be circular, since the file ships
+inside the tarball it would checksum. That is the circularity [[ADR-300]]
+identifies, reached independently, and answered by keeping the sum out of
+version control rather than by taking the recipe from the branch and the hash
+from the tag. `arch-repo` can only implement one of those two answers.
 
 A spec has to say what it means by a version, and `arch-repo` currently gets
 that wrong in one place. `github_latest` asks for `releases/latest`, which
@@ -236,15 +234,13 @@ carries no trace of it afterwards.
   project.
 - **Teach `arch-repo` to find a recipe wherever a repository put it** — a
   configurable path per package, so `clicue` keeps `packaging/aur/PKGBUILD`.
-  Rejected because it makes the tool absorb the variance instead of removing it.
-  A configurable path is a contract with one clause that is always negotiable,
-  and the next repository invents a third location.
+  Rejected because it makes the tool absorb the variance instead of removing it,
+  and the next repository invents a fourth location.
 - **Have `arch-repo` drive each repository's own build** — invoke a declared
   entrypoint, package the artifact it emits. Rejected: it needs a second contract
   for what that entrypoint is called and what it produces, and it moves the build
   outside `makepkg`'s clean chroot, which is what namcap and the reproducibility
-  claim currently rest on. The PKGBUILD is already the build process, and it is
-  already standard.
+  claim currently rest on. The PKGBUILD is already a standard build process.
 - **A central manifest in `arch-repo` listing every package and its rebuild
   state.** Rejected for the reason [[ADR-200]] rejected a central build matrix:
   a written-down list is a second source of truth that drifts from the tree.
