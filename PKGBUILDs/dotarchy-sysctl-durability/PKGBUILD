@@ -21,7 +21,7 @@ source=(
     LICENSE
 )
 sha256sums=('e6aef6a149f248388aeca14455523af234b84aa6aa5681eaa9dd9f016f11d6c5'
-            'c74eb50ccc5ab5b3c7f07c2c803ba4184fdd1f1484ed09db76a3cff6053fbb8e'
+            '8474100589a4451ab941ec4bf40edbff206fe744c468a5ef36a8bdd189f6bcb4'
             'e870e620d99f4e77ed7c60ff607470bed5c3ef4c1b2ce4fb66d335b8e4e0247c')
 
 package() {
