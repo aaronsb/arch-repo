@@ -1,0 +1,3 @@
+# In-tree sibling, not an AUR package: it is built in the same run, so it is
+# not yet in any repository the build container can see. Stub it.
+dotarchy-sysctl-durability
