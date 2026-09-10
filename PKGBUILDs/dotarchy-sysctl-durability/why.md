@@ -18,4 +18,6 @@ Sources: `sysctl.d(5)`; Linux `Documentation/admin-guide/sysctl/kernel.rst`
 for `softlockup_panic`, `hardlockup_panic`, `hung_task_panic`, `panic`,
 `panic_on_io_nmi`, `sysrq`.
 
-Undo: `pacman -Rns dotarchy-sysctl-durability && sysctl --system`.
+Undo: `pacman -Rns dotarchy-sysctl-durability`. Removing the file does not
+reset a running kernel; the six values persist until reboot, or until
+`sysctl -w` sets each back to its default (`0 0 0 0 0 16`).

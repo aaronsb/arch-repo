@@ -20,6 +20,11 @@ PKGBUILDs/*/*
 # dotarchy recipe and opinion packages have no upstream: the directory is the
 # source, so every file in it is tracked.
 !PKGBUILDs/dotarchy-*/*
+PKGBUILDs/dotarchy-*/*.pkg.tar.*
+PKGBUILDs/dotarchy-*/*.log
+PKGBUILDs/dotarchy-*/namcap.txt
+PKGBUILDs/dotarchy-*/pkg/
+PKGBUILDs/dotarchy-*/src/
 
 # Shared helpers, not a package. The rule above is written for package
 # directories and would otherwise swallow this one whole.

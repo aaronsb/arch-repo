@@ -4,6 +4,9 @@
 # no upstream script because this directory is the source; bump pkgver by
 # commit. Naming follows dotarchy's docs/naming.md — one slug for the package,
 # the file, the doc dir, and the ledger entry.
+#
+# No install hook: systemd's own 25-systemd-sysctl.hook reloads sysctl when a
+# file under usr/lib/sysctl.d changes, on install and on upgrade.
 
 pkgname=dotarchy-sysctl-durability
 pkgver=1.0.0
@@ -12,8 +15,6 @@ pkgdesc="Kernel lockups panic and reboot instead of hanging; SysRq fully enabled
 arch=('any')
 url="https://github.com/aaronsb/arch-repo"
 license=('0BSD')
-depends=('procps-ng')
-install="${pkgname}.install"
 source=(
     "60-${pkgname}.conf"
     why.md

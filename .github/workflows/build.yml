@@ -154,25 +154,63 @@ jobs:
           chown -R builder:builder "$GITHUB_WORKSPACE"
           sudo -u builder ./docs/example/verify
 
+  # An in-tree package (no `upstream` script) is versioned by hand, and a
+  # content change that leaves pkgver-pkgrel alone would republish different
+  # bytes under a name clients already hold. On a pull request, any changed
+  # in-tree package must have moved its version. A package new to the base
+  # branch passes: there is nothing to have moved from.
+  in-tree-version:
+    needs: discover
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - env:
+          BASE: ${{ github.base_ref }}
+          PKGS: ${{ needs.discover.outputs.pkgs }}
+        run: |
+          fail=0
+          for pkg in $(echo "$PKGS" | jq -r '.[]'); do
+            dir="PKGBUILDs/$pkg"
+            [ -e "$dir/upstream" ] && continue
+            git diff --quiet "origin/$BASE...HEAD" -- "$dir" && continue
+            if ! git cat-file -e "origin/$BASE:$dir/PKGBUILD" 2>/dev/null; then
+              echo "::notice::$pkg is new; no version to compare"; continue
+            fi
+            ver() { git show "$1:$dir/PKGBUILD" | awk -F= '/^pkgver=/{v=$2} /^pkgrel=/{r=$2} END{print v"-"r}'; }
+            before=$(ver "origin/$BASE"); after=$(ver HEAD)
+            if [ "$before" = "$after" ]; then
+              echo "::error::$pkg changed but pkgver-pkgrel is still $after; bump one"
+              fail=1
+            else
+              echo "$pkg: $before -> $after"
+            fi
+          done
+          exit $fail
+
   # One check name that does not change when packages come and go. Branch
   # protection names its required contexts as strings, so requiring the matrix
   # legs directly meant every added package silently arrived ungated: its job
   # was not in the required list, and a rule listing a departed package's job
   # can never be satisfied at all.
   gate:
-    needs: [discover, build, contract]
+    needs: [discover, build, contract, in-tree-version]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Require every package to have built
         run: |
-          echo "discover=${{ needs.discover.result }} build=${{ needs.build.result }} contract=${{ needs.contract.result }}"
+          echo "discover=${{ needs.discover.result }} build=${{ needs.build.result }} contract=${{ needs.contract.result }} in-tree-version=${{ needs.in-tree-version.result }}"
           # A matrix result is the aggregate of its legs, so one failed package
           # fails this. Cancelled and skipped are failures here too — neither
           # means the packages built.
           test "${{ needs.discover.result }}" = success
           test "${{ needs.build.result }}"    = success
           test "${{ needs.contract.result }}" = success
+          # in-tree-version runs only on pull requests, so on main it is skipped.
+          case "${{ needs.in-tree-version.result }}" in success|skipped) ;; *) exit 1 ;; esac
 
   publish:
     needs: gate
@@ -323,7 +361,7 @@ jobs:
           git clone -q "ssh://aur@aur.archlinux.org/${PKG}.git" /tmp/aur
 
           # What goes to the AUR is the package, not this repository's tooling.
-          # Taking the tracked files and subtracting the four CI-only names is
+          # Taking the tracked files and subtracting the CI-only names is
           # the only version of this that stays correct as packages are added:
           # the previous list was literally PKGBUILD plus the Claude signing key,
           # so the first package without that key failed on a missing file, and
