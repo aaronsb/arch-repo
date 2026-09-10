@@ -10,11 +10,21 @@ PKGBUILDs/*/*
 !PKGBUILDs/*/notes
 !PKGBUILDs/*/.no-auto-merge
 !PKGBUILDs/*/.aur-deps
+!PKGBUILDs/*/.no-aur
 
 # Files a PKGBUILD references beside itself rather than downloading: pacman
 # install hooks, and licence texts that upstream ships outside the tarball.
 !PKGBUILDs/*/*.install
 !PKGBUILDs/*/*.txt
+
+# dotarchy recipe and opinion packages have no upstream: the directory is the
+# source, so every file in it is tracked.
+!PKGBUILDs/dotarchy-*/*
+PKGBUILDs/dotarchy-*/*.pkg.tar.*
+PKGBUILDs/dotarchy-*/*.log
+PKGBUILDs/dotarchy-*/namcap.txt
+PKGBUILDs/dotarchy-*/pkg/
+PKGBUILDs/dotarchy-*/src/
 
 # Shared helpers, not a package. The rule above is written for package
 # directories and would otherwise swallow this one whole.
