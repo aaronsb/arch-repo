@@ -69,6 +69,12 @@ package that provides the name and nothing else — before the build.
 Leave the name in `depends()`. Dropping it would build just as well and then lie
 to whoever installs the result; the stub exists so the recipe can stay truthful.
 
+## Packages that stay out of the AUR
+
+A `.no-aur` file in the package directory keeps it off the AUR. It still
+builds, signs, and publishes to the pacman repository. dotarchy recipe and
+opinion packages carry it until publishing them there is decided.
+
 ## What arch-repo owns
 
 Declare these so the recipe is valid on its own. Do not maintain them:

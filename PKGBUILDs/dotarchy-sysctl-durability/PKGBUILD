@@ -1,0 +1,30 @@
+# Maintainer: Aaron Bockelie <aaronsb@gmail.com>
+#
+# A dotarchy recipe package: files only, vendor tier only, one recipe. It has
+# no upstream script because this directory is the source; bump pkgver by
+# commit. Naming follows dotarchy's docs/naming.md — one slug for the package,
+# the file, the doc dir, and the ledger entry.
+
+pkgname=dotarchy-sysctl-durability
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Kernel lockups panic and reboot instead of hanging; SysRq fully enabled"
+arch=('any')
+url="https://github.com/aaronsb/arch-repo"
+license=('0BSD')
+depends=('procps-ng')
+install="${pkgname}.install"
+source=(
+    "60-${pkgname}.conf"
+    why.md
+    LICENSE
+)
+sha256sums=('e6aef6a149f248388aeca14455523af234b84aa6aa5681eaa9dd9f016f11d6c5'
+            'c74eb50ccc5ab5b3c7f07c2c803ba4184fdd1f1484ed09db76a3cff6053fbb8e'
+            'e870e620d99f4e77ed7c60ff607470bed5c3ef4c1b2ce4fb66d335b8e4e0247c')
+
+package() {
+    install -Dm644 "60-${pkgname}.conf" "${pkgdir}/usr/lib/sysctl.d/60-${pkgname}.conf"
+    install -Dm644 why.md               "${pkgdir}/usr/share/doc/${pkgname}/why.md"
+    install -Dm644 LICENSE              "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

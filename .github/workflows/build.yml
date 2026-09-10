@@ -293,6 +293,12 @@ jobs:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
           PKG: ${{ matrix.pkg }}
         run: |
+          # A package that is not for the AUR says so with a .no-aur marker. It
+          # still builds, signs, and publishes to the pacman repository above.
+          if [ -e "PKGBUILDs/${PKG}/.no-aur" ]; then
+            echo "::notice::${PKG} carries .no-aur; not pushed to the AUR"
+            exit 0
+          fi
           install -dm700 /tmp/aur-ssh
           printf '%s\n' "$AUR_SSH_KEY" > /tmp/aur-ssh/key
           chmod 600 /tmp/aur-ssh/key
@@ -329,7 +335,7 @@ jobs:
           # workspace carries no usable git metadata inside this container, which
           # is the same instability the note above records about HOME.
           files=$(ls -A "PKGBUILDs/${PKG}" \
-                  | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow|\.aur-deps')
+                  | grep -vxE 'upstream|notes|\.no-auto-merge|\.namcap-allow|\.aur-deps|\.no-aur')
           test -n "$files"
           for f in $files; do cp "PKGBUILDs/${PKG}/$f" /tmp/aur/; done
           chown -R builder:builder /tmp/aur

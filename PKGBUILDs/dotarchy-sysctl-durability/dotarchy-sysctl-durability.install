@@ -1,0 +1,3 @@
+post_install() { sysctl --system >/dev/null 2>&1 || true; }
+post_upgrade() { post_install; }
+post_remove()  { post_install; }
