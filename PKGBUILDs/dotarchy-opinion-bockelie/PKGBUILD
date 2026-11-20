@@ -1,0 +1,22 @@
+# Maintainer: Aaron Bockelie <aaronsb@gmail.com>
+#
+# A dotarchy opinion package: depends only. Installing it applies every recipe
+# the opinion is made of; removing it and then `pacman -Qdt` shows what it
+# pulled in. <name> is the last label of the registry id com.bockelie.dotfiles.
+
+pkgname=dotarchy-opinion-bockelie
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Aaron Bockelie's opinion of an Arch workstation, as a set of recipe packages"
+arch=('any')
+url="https://dotarchy.sh"
+license=('0BSD')
+depends=(
+    'dotarchy-sysctl-durability'
+)
+source=(LICENSE)
+sha256sums=('e870e620d99f4e77ed7c60ff607470bed5c3ef4c1b2ce4fb66d335b8e4e0247c')
+
+package() {
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

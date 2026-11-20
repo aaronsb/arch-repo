@@ -1,7 +1,7 @@
 # Packaging a project through arch-repo
 
 What a source repository provides so that `arch-repo` can build, lint, sign and
-publish it to the AUR and the `[aaronsb]` pacman repository. The decision behind
+publish it to the `[aaronsb]` pacman repository and, unless it opts out, the AUR. The decision behind
 this is [ADR-100](architecture/packaging/ADR-100-one-packaging-contract-for-every-repository-arch-repo-publishes.md);
 this page is the contract itself, and [`example/`](example/) is a complete
 repository laid out to it — copy from there rather than from the fragments
@@ -68,6 +68,26 @@ package that provides the name and nothing else — before the build.
 
 Leave the name in `depends()`. Dropping it would build just as well and then lie
 to whoever installs the result; the stub exists so the recipe can stay truthful.
+
+The same file covers a dependency on another package in this repository. It is
+built in the same run, so no repository the container consults carries it yet;
+`dotarchy-opinion-bockelie` stubs `dotarchy-sysctl-durability` this way.
+
+## Packages that stay out of the AUR
+
+A `.no-aur` file in the package directory keeps it off the AUR. It still
+builds, signs, and publishes to the pacman repository. dotarchy recipe and
+opinion packages carry it until publishing them there is decided.
+
+## Packages with no upstream
+
+A package directory without an `upstream` script is its own source: the files
+beside the PKGBUILD are what gets installed. The watcher never looks at it, so
+the table in the next section does not apply. `pkgver`, `pkgrel`, and
+`sha256sums` are hand-maintained (`updpkgsums` after editing a file), and any
+change to the directory must move `pkgver` or `pkgrel`. CI enforces that on
+pull requests: a changed in-tree package whose version did not move fails the
+`in-tree-version` check. The dotarchy recipe and opinion packages are this kind.
 
 ## What arch-repo owns
 
@@ -150,7 +170,9 @@ to `main`. The watcher leaves a hand-set `pkgrel` alone.
 2. Delete whatever publishes to the AUR, and any documentation pointing at it.
 3. Add the three make targets.
 4. Cut a GitHub release if the project has only ever tagged.
-5. Add `PKGBUILDs/<pkg>/` to `arch-repo` with an `upstream` script.
+5. Add `PKGBUILDs/<pkg>/` to `arch-repo` with an `upstream` script. (A package
+   with no source repository skips steps 1 to 4 and has no `upstream` script;
+   see [Packages with no upstream](#packages-with-no-upstream).)
 
 Steps 1 to 4 land on the default branch, which is where the recipe comes from,
 so none of them needs a new tag. Each reaches users as `pkgrel` advancing.
